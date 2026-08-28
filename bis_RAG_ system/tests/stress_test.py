@@ -3,8 +3,19 @@ Phase 7, Step 23: Edge Case Stress Testing Suite (stress_test.py)
 Stress-tests the system on ambiguous product terms, revised/superseded standards, and code-mixed Hinglish.
 """
 
+import sys
 import logging
-from test_phase5 import MultilingualBISPipelne
+from pathlib import Path
+
+# Add src and root to python path for clean test execution
+BASE_DIR = Path(__file__).resolve().parent.parent
+SRC_DIR = BASE_DIR / "src"
+TESTS_DIR = BASE_DIR / "tests"
+for path in [SRC_DIR, TESTS_DIR, BASE_DIR]:
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
+
+from tests.test_phase5 import MultilingualBISPipelne
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("stress_test")

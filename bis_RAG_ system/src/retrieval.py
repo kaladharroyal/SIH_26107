@@ -20,8 +20,9 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("hybrid_retrieval")
 
-RAW_DIR = Path("./raw_data")
-PROCESSED_CHUNKS_PATH = Path("./processed_chunks.jsonl")
+BASE_DIR = Path(__file__).resolve().parent.parent
+RAW_DIR = BASE_DIR / "raw_data"
+PROCESSED_CHUNKS_PATH = BASE_DIR / "processed_chunks.jsonl"
 
 
 class BM25Index:

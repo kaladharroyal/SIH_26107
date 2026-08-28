@@ -3,10 +3,19 @@ Phase 5, Step 19: Multilingual & Hinglish Benchmark Test Suite (test_phase5.py)
 Verifies multilingual query detection, Hinglish normalization, and citation-preserving translations.
 """
 
+import sys
 import logging
-from multilingual import MultilingualHandler
-from translation_engine import TranslationEngine
-from test_phase4 import Phase4Orchestrator
+from pathlib import Path
+
+# Add src to python path for clean test execution
+BASE_DIR = Path(__file__).resolve().parent.parent
+SRC_DIR = BASE_DIR / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from src.multilingual import MultilingualHandler
+from src.translation_engine import TranslationEngine
+from tests.test_phase4 import Phase4Orchestrator
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("test_phase5")

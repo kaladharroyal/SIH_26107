@@ -4,13 +4,24 @@ Tests Intent Routing and Sub-Flow Execution across Product Recommendation, Schem
 Lab Locators, Consumer Complaints, and General RAG queries.
 """
 
+import sys
 import logging
-from router import QueryIntentRouter
-from product_recommender import ProductRecommender
-from scheme_walkthrough import SchemeWalkthroughGuide
-from lab_locator import LabLocator
-from consumer_complaint import ConsumerComplaintHandler
-from rag_pipeline import BISRAGPipeline
+from pathlib import Path
+
+# Add src and root to python path for clean test execution
+BASE_DIR = Path(__file__).resolve().parent.parent
+SRC_DIR = BASE_DIR / "src"
+TESTS_DIR = BASE_DIR / "tests"
+for path in [SRC_DIR, TESTS_DIR, BASE_DIR]:
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
+
+from src.router import QueryIntentRouter
+from src.product_recommender import ProductRecommender
+from src.scheme_walkthrough import SchemeWalkthroughGuide
+from src.lab_locator import LabLocator
+from src.consumer_complaint import ConsumerComplaintHandler
+from src.rag_pipeline import BISRAGPipeline
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("test_phase4")
