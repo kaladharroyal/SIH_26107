@@ -31,7 +31,7 @@ class QueryIntentRouter:
         self.mapping = category_mapping or INTENT_TO_CORPUS_CATEGORY
         self.patterns: Dict[str, List[str]] = {
             "certification_process": [
-                r"\b(how to apply|apply online|application process|licensing procedure|grant of licence|scheme-i|scheme-ii|fmcs|walkthrough|steps to get)\b",
+                r"\b(how to get|how do i get|how to apply|apply online|application process|licensing procedure|grant of licence|grant of license|scheme\s*[-–]?\s*[i|ii|x|1|2]|fmcs|walkthrough|steps to get|get bis certification)\b",
                 r"\b(fee|cost|application fee|inspection fee|man-day|validity|renewal|documents required)\b.*\b(process|apply|licence|certification)\b",
                 r"\b(process for product certification|grant of license|renewal of license)\b",
             ],
@@ -45,9 +45,9 @@ class QueryIntentRouter:
             "product_recommendation": [
                 r"\b(product|standard|mandatory|compulsory|applies|require|required|need|is\s*\d+)\b.*\b(certification|licence|license|qco|crs|scheme)\b",
                 r"\b(certification|licence|license|qco|crs|scheme)\b.*\b(product|standard|mandatory|compulsory|applies|require|required|need|is\s*\d+)\b",
-                r"\b(do i need|which standard|is it mandatory|compulsory certification|scheme-x|isi mark for)\b",
-                r"\b(bulb|steel|toy|helmet|battery|pv module|solar|cable|cement|valve|water|gold|jewellery|reinforcement)\b.*\b(standard|mandatory|certify|applicable|module|product)\b",
-                r"\b(standard|mandatory|certify|applicable)\b.*\b(bulb|steel|toy|helmet|battery|pv module|solar|cable|cement|valve|water|gold|jewellery|reinforcement)\b",
+                r"\b(do i need|which standard|what standard|what bis standard|standard for|standards for|standard should i use|compulsory certification|scheme-x|isi mark for)\b",
+                r"\b(bulb|steel|toy|helmet|battery|pv module|solar|cable|cement|valve|water|gold|jewellery|reinforcement|tmt|tmt bar)\b.*\b(standard|mandatory|certify|applicable|module|product|use)\b",
+                r"\b(standard|mandatory|certify|applicable|use)\b.*\b(bulb|steel|toy|helmet|battery|pv module|solar|cable|cement|valve|water|gold|jewellery|reinforcement|tmt|tmt bar)\b",
             ],
         }
 
