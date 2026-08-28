@@ -1,0 +1,55 @@
+# Phase 3: Generation Layer — Detailed Description
+
+## Objective
+
+Phase 2 delivers 3-5 reranked, correctly-tagged chunks for a given query. Phase 3 turns those chunks into an actual answer — and this is where the assistant's core promise (accurate, source-backed, non-hallucinated) either holds or breaks. The central design constraint: **an LLM asked to answer from context will still often blend in prior knowledge or smooth over gaps with a plausible-sounding guess**, especially for a domain like BIS certification where the model has seen plenty of generic "how to get ISI certified" content during pretraining that may be outdated, incomplete, or simply wrong for the current regulation. Phase 3 exists to suppress that tendency, not just to phrase retrieved facts nicely.
+
+---
+
+## Step 9: Grounded-Answer Prompting
+
+The system prompt for generation is built around one hard rule: **the model may only state something as fact if it appears in the retrieved chunks, and every factual claim must carry an inline citation to a specific IS number + clause, or a specific FAQ source page.**
+
+This needs to be enforced structurally, not just requested politely. Concretely:
+- The retrieved chunks are passed with their metadata visible to the model (IS number, clause number, source URL) so citing them is a copy operation, not a recall-from-memory operation.
+- The prompt explicitly instructs the model to distinguish "this is stated in the retrieved standard" from "this is my general understanding of how certification usually works" — and forbids the second category from appearing in the final answer at all.
+- For numeric details specifically (fees, timelines, validity periods) — the exact category where Phase 1's FAQ scraping already surfaced real figures (₹1,000 application fee, ₹7,000/man-day inspection fee, 90-day test report validity) — the prompt requires the number to be traceable to a retrieved chunk, not reconstructed from general knowledge of "BIS fees are usually around X."
+
+This matters more here than in a typical RAG system because BIS fee schedules and procedural requirements change via amendments (Phase 1's hallmarking source list already surfaced ~15 dated amendment PDFs for one scheme alone) — a model's pretrained sense of "what BIS certification usually costs" is close enough to sound right and wrong enough to cause real harm to an MSME budgeting for compliance.
+
+---
+
+## Step 10: Confidence / Refusal Gate
+
+Before generation runs at all, a lightweight check decides whether the retrieved context is actually sufficient to answer, and gates the response accordingly.
+
+The gate uses signals already available from Phase 2, not a separate model call:
+- **Reranker score of the top chunk** — if even the best-ranked chunk scores below a threshold, the query is likely outside the corpus (an unsupported product category, a scheme not yet ingested, a JS-rendered-source gap flagged back in Phase 1) rather than the retrieval simply doing a mediocre job on a good match.
+- **Category-filter miss** — if intent classification confidently routed the query to a category (say, `product_standard_mapping`) but that category returned no chunks above threshold, that's a stronger signal of a genuine gap than a low general-purpose score.
+- **Retrieved-chunk agreement** — if the top few chunks disagree or come from unrelated categories despite passing the score threshold, that's worth surfacing as uncertainty rather than picking one arbitrarily.
+
+When the gate fires, the response shifts from "here's the answer" to "here's what I can tell you, and here's what to verify directly with BIS" — with a pointer to the right official channel (the BIS FAQ page, the enquiry portal, BIS CARE) rather than a bare refusal. This is a genuine product tradeoff: too conservative a threshold makes the assistant feel useless for anything slightly off the beaten path (a real risk given Phase 1 only ingested ~30 curated standards out of 19,000+); too permissive defeats the entire point of grounding.
+
+---
+
+## Step 11: Citation Formatting
+
+The retrieved chunks carry structured metadata specifically so citation isn't a generation-time guess — it's a formatting pass over what retrieval already returned.
+
+Format target: `"As per IS 1786:2008, Clause 4.2, ..."` for standard clauses, and `"Per BIS's Product Certification FAQ (Q.14), ..."` for the FAQ-sourced content verified in Phase 1. Each citation links back to the source (the standard's manual_standards PDF, or the original bis.gov.in URL from the scraped manifest) so a user can independently verify anything the assistant states — critical for a compliance-adjacent tool where "trust but verify" should be the default posture, not an afterthought.
+
+A detail worth getting right here: FAQ-sourced answers and clause-sourced answers should be citeable in visibly different formats, since an FAQ answer is BIS's own plain-language gloss on a regulation (useful, but a simplification) while a clause citation is the regulation itself. Blurring that distinction risks a user treating a simplified FAQ answer as having the same legal weight as the underlying standard.
+
+---
+
+## What Phase 3 depends on from Phases 1-2
+
+- Chunk metadata (IS number, clause number, source URL) surviving intact through retrieval and reranking — if that metadata gets stripped or mangled anywhere in the Phase 2 pipeline, citation formatting has nothing to work with
+- The FAQ vs. clause distinction established by Phase 1's `content_type` field (`html_page`/FAQ vs. `pdf`/clause) — this is what lets Step 11 format the two source types differently
+- Phase 2's reranker score being a meaningful, calibrated signal — the confidence gate in Step 10 is only as trustworthy as that score actually correlating with "is this chunk relevant," which was flagged as untested in Phase 2's "what's genuinely uncertain" list
+
+## What's genuinely uncertain going in
+
+- Where to set the confidence threshold — this needs actual calibration against the test query set from Phase 2 (comparing gate decisions against manual "should this have refused?" judgments), not a number picked in advance
+- Whether a single confidence gate is enough, or whether certain categories need stricter gating than others — a wrong answer about a consumer complaint process is lower-stakes than a wrong answer about mandatory certification requirements, and the gate arguably shouldn't treat them identically
+- How much of the "point to the official channel" fallback message can be pre-written per category vs. needs to be generated — pre-written is safer (zero hallucination risk in the fallback itself) but less naturally responsive to the specific question asked

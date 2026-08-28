@@ -1,0 +1,99 @@
+# Phase 1: Data Foundation — Detailed Description
+
+## Objective
+
+Phase 1 builds the raw data layer the entire BIS assistant depends on: identifying every category of information the assistant needs to answer (standards, certification, licensing, labs, hallmarking, consumer queries), pulling that content from BIS's various web portals, and structuring it so it can be embedded and retrieved accurately in later phases — with every answer traceable back to a specific clause, FAQ entry, or official page.
+
+The design principle throughout: **retrieval accuracy depends entirely on how well-structured the source data is**. A wrong or unsourced answer about a certification requirement isn't a minor bug for this use case — it's the failure mode that would make the assistant actively harmful to an MSME relying on it. So Phase 1 prioritizes traceability (clause numbers, source URLs, content hashes) over raw coverage.
+
+---
+
+## Step 1: Source Identification
+
+BIS does not expose a public API, and its content is spread across **four separate domains**, not one:
+- `bis.gov.in` — the main site (standards info, certification schemes, hallmarking, consumer pages)
+- `crsbis.in` — the Compulsory Registration Scheme portal (electronics/IT products)
+- `manakonline.in` / `huid.manakonline.in` — application/licensing portal, jeweller and hallmarking-centre lookups
+- `lims.bis.gov.in` and `standards.bis.gov.in` — lab search and standards search, both JS-rendered single-page apps
+- `standardsbis.bsbedge.com` — the official e-Sale portal for full standard-text downloads
+
+I manually verified **27 live URLs** across these domains by searching and fetching real pages (not assumed from memory), organized by the capability each feeds rather than by BIS's own navigation structure:
+
+| Capability | Sources found |
+|---|---|
+| Product → standard recommender | Compulsory Certification list, Scheme-X list |
+| Certification guidance | Product/Systems/FMCS/CRS overview + process pages |
+| Certification FAQs | 4 official FAQ pages (Product Cert has 28 verified Q&A pairs with real fee figures) |
+| Licensing procedure & fees | Fee schedule, apply-online page, simplified-procedure product list |
+| Testing labs | Recognized/empanelled lab list page (links to dated PDF exports) |
+| Hallmarking | Overview, 3 FAQ pages, jewellers' registration scheme, mandatory order |
+| Consumer queries | Consumer protection page, consumer FAQ, complaint registration process |
+| Training | Overview and FAQ |
+
+Each source is tagged in `sources.yaml` with its type (`pdf_listing`, `html_table`, or `html_page`) and category, so the ingestion pipeline knows how to handle it without per-page special-casing.
+
+**A critical constraint discovered during this step**: full IS standard texts are *not* a plain-URL scrape target. They're free for indigenous standards, but only after creating an account on the e-Sale portal — and each download is watermarked with the downloader's personal email. This ruled out automated bulk-harvesting of the standards corpus and shaped the rest of Phase 1's design (see "Manual standards" below).
+
+I also flagged which targets are **JS-rendered SPAs** (lab search with 431 entries, "Know Your Standards", jeweller/AHC lists) — these return an empty shell to a plain HTTP scraper and need their underlying API endpoints identified via browser devtools before they can be ingested at all.
+
+---
+
+## Step 2: Scraping Infrastructure (`scraper.py`)
+
+Built three scraping modes, each suited to a different content shape found on BIS's site:
+
+1. **`scrape_pdf_links`** — for listing pages that link out to PDFs (lab directory exports, scheme documents). Downloads each PDF, hashes its content, and records it in a manifest.
+
+2. **`scrape_html_table`** — for structured tabular data (product-code mappings, lab listings rendered as HTML tables). Extracts rows into JSON keyed by table headers.
+
+3. **`scrape_html_page`** (added this session) — for informational/FAQ content. This is the highest-value scraper of the three: BIS's FAQ pages are already phrased as question/answer pairs, which is close to ideal RAG chunk shape. I fetched the real Product Certification FAQ page and found BIS uses **inconsistent numbering** across its own FAQs (`Q 1`, `Q.2`, `Q 12:`, `Q17.`, `Q. 25`) — so I built and tested a regex against all five variants before trusting it, confirming it cleanly splits into 28 distinct question/answer segments on the real page content.
+
+**Every scraped item — regardless of type — is recorded in a manifest** (`manifest.jsonl`) with its source URL, fetch timestamp, and a SHA-256 content hash. This is the mechanism for detecting standard/document revisions later: re-run the scraper periodically, diff hashes, and flag anything that changed rather than silently serving stale content.
+
+The scraper is deliberately polite (1.5s delay between requests, identifying User-Agent) and fails loudly — logs and skips broken pages rather than crashing or silently producing empty output, since gaps in a compliance-information corpus need to be visible, not hidden.
+
+---
+
+## Step 3: Clause-Aware PDF Parsing (`pdf_parser.py`)
+
+This is the part I considered highest-risk to get wrong, because it directly determines citation accuracy. Naive fixed-size chunking (e.g., "every 500 tokens") would split a chunk mid-clause and make it impossible to cite "IS 302, Clause 4.2" correctly.
+
+Instead, the parser:
+- Extracts text page-by-page using `pdfplumber` (handles the multi-column layouts common in IS standard documents better than PyPDF2)
+- Detects clause headers via regex matching numbered headings (`4`, `4.2`, `4.2.1`, optionally followed by a title)
+- Groups all text under its nearest preceding clause header
+- Tags each resulting chunk with: IS number, part number, revision year, clause number, clause title, and page range
+- Splits any single clause that's unusually long into paragraph-bounded sub-chunks, while preserving the same clause number so citations still resolve correctly
+
+**I validated this against a generated mock IS-standard PDF** (formatted like a real `IS 302 (Part 1) : 2008` document) rather than trusting the logic on paper. The parser correctly identified the standard number and year from the filename/cover text, and split the document into 7 distinct chunks — one per clause (`0/Preamble`, `1/Scope`, `2/Normative References`, `4/Requirements`, `4.1/General`, `4.2/Material`, `4.2.1/Insulation`) — with titles and page numbers intact.
+
+---
+
+## Step 4: Structured Storage (`schema.sql`, `loader.py`)
+
+A Postgres schema with five tables:
+- **`standards`** — one row per IS standard (number, part, year, current/superseded status, source hash)
+- **`clauses`** — one row per chunk, foreign-keyed to its standard, with full-text search indexing
+- **`product_standard_map`** — product → mandatory standard mapping (CRS/QCO), ready for the recommender feature
+- **`labs`** — testing lab directory with recognized scopes
+- **`query_logs`** — for the feedback loop planned in later phases (thumbs up/down tied to retrieved chunks)
+
+`loader.py` upserts scraped/parsed chunks into this schema, deduplicating standards and using `ON CONFLICT` handling so re-running the pipeline after a re-scrape updates existing records rather than duplicating them.
+
+This step is intentionally separated from vector-DB embedding (that's Phase 2) — it gives a clean, SQL-queryable checkpoint where you can sanity-check chunk counts and content by hand before spending API budget on embeddings.
+
+---
+
+## Handling the "no full-text corpus" constraint
+
+Since automated bulk download of standard PDFs isn't viable, Phase 1 includes a `manual_standards/` convention: a folder where a small, deliberately curated set of standards (suggested starting list: IS 302, IS 1786, IS 15820, IS 1417 — chosen because they're referenced repeatedly across the FAQ content already gathered) get dropped in after manual download via a personal BIS account, then run through the same `pdf_parser.py` pipeline. This keeps the demo's scope honest — a curated 20-30 standards, not a false claim of full 19,000+ standard coverage — while still exercising the complete pipeline end-to-end.
+
+---
+
+## What Phase 1 delivers
+
+- `scraper.py`, `pdf_parser.py`, `loader.py` — tested, syntax-checked, and validated against real BIS content and mock documents
+- `schema.sql` — ready-to-run Postgres schema
+- `sources.yaml` — 27 verified URLs, categorized by assistant capability
+- `manual_standards/` — convention + starter list for the full-text gap
+- A README documenting the full pipeline flow, setup commands, and — importantly — the known gaps still open before Phase 2 (scanned/image-only PDFs need OCR, JS-rendered lookups need their API endpoints identified, revision tracking needs a cross-reference step)

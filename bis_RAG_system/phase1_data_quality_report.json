@@ -1,0 +1,58 @@
+{
+  "timestamp": "2026-08-28T18:38:04.151207+00:00",
+  "dataset_name": "PHASE1_FULL_PDF_CORPUS",
+  "dataset_scope": "Full Physical PDF Corpus (raw_data/pdfs/)",
+  "runtime_seconds": 2349.1,
+  "raw_records": {
+    "discovered": 1791,
+    "processed": 1356,
+    "quarantined": 123,
+    "explicitly_skipped": 312,
+    "reconciliation_equation": "1791 == 1356 + 123 + 312",
+    "reconciliation_valid": true
+  },
+  "logical_source_records": {
+    "discovered": 1791,
+    "processed": 1356,
+    "quarantined": 123,
+    "explicitly_skipped": 312,
+    "reconciliation_equation": "1791 == 1356 + 123 + 312",
+    "reconciliation_valid": true
+  },
+  "pdf_records": {
+    "discovered": 1791,
+    "processed": 1356,
+    "quarantined": 123,
+    "explicitly_skipped": 312,
+    "reconciliation_equation": "1791 == 1356 + 123 + 312",
+    "reconciliation_valid": true
+  },
+  "pdf_file_accounting": {
+    "discovered_pdf_files": 1791,
+    "processed_pdf_files": 1356,
+    "quarantined_pdf_files": 123,
+    "skipped_pdf_files": 312,
+    "reconciliation_equation": "1791 == 1356 + 123 + 312",
+    "reconciliation_valid": true
+  },
+  "chunk_accounting": {
+    "total_raw_chunks": 51358,
+    "unique_chunks": 41476,
+    "duplicates_eliminated": 9882,
+    "reconciliation_equation": "51358 == 41476 + 9882",
+    "reconciliation_valid": true
+  },
+  "metadata_integrity": {
+    "verified_is_standards": 7628,
+    "non_standard_policy_chunks": 2175,
+    "unknown_identity_chunks": 31673,
+    "category_distribution": {
+      "general_policy": 30550,
+      "qco_order": 1250,
+      "is_standard": 7460,
+      "lab_directory": 1134,
+      "annual_report": 1082
+    }
+  },
+  "corpus_hash": "b8b770374ebae070d19c6a0f488d05b42405ec30850525e07549eba72808baf9"
+}
