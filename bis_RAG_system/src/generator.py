@@ -9,10 +9,32 @@ import logging
 import os
 import re
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("generator")
+
+# Automatically load .env file if present
+def _load_env():
+    for p in [Path.cwd() / ".env", Path(__file__).resolve().parent.parent / ".env", Path(__file__).resolve().parent / ".env"]:
+        if p.exists():
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k = k.strip()
+                            v = v.strip().strip("'\"")
+                            if k and v and k not in os.environ:
+                                os.environ[k] = v
+                log.info(f"Loaded environment variables from {p}")
+                break
+            except Exception:
+                pass
+
+_load_env()
 
 SYSTEM_GROUNDING_PROMPT = """You are an official, authoritative Bureau of Indian Standards (BIS) AI Compliance Assistant.
 Your primary objective is to provide 100% accurate, source-grounded answers to queries from MSMEs, consumers, and industry stakeholders.
@@ -67,9 +89,9 @@ class OpenAIProvider(BaseLLMProvider):
 class GeminiProvider(BaseLLMProvider):
     """Google Gemini API provider."""
 
-    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-1.5-flash"):
+    def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        self.model_name = model_name
+        self.model_name = model_name or os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash")
 
     def generate(self, system_prompt: str, user_prompt: str, temperature: float = 0.1) -> Dict[str, Any]:
         if not self.api_key:
@@ -102,6 +124,10 @@ class GeminiProvider(BaseLLMProvider):
             }
             resp = requests.post(url, json=payload, timeout=30)
             data = resp.json()
+            if resp.status_code != 200 or "candidates" not in data:
+                err_msg = data.get("error", {}).get("message", f"HTTP {resp.status_code}")
+                raise RuntimeError(f"Gemini API Error: {err_msg}")
+
             text = data["candidates"][0]["content"]["parts"][0]["text"]
             return {
                 "response": text,
@@ -222,7 +248,7 @@ class GroundedGenerator:
         if p_name == "openai" and (self.api_key or os.getenv("OPENAI_API_KEY")):
             return OpenAIProvider(api_key=self.api_key, model_name=self.model_name or "gpt-4o-mini")
         elif p_name == "gemini" and (self.api_key or os.getenv("GEMINI_API_KEY")):
-            return GeminiProvider(api_key=self.api_key, model_name=self.model_name or "gemini-1.5-flash")
+            return GeminiProvider(api_key=self.api_key, model_name=self.model_name or os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash"))
         else:
             if p_name not in ["mock", "offline"]:
                 log.info(f"Provider '{self.provider_name}' specified without active API key. Defaulting to MockOfflineProvider.")
