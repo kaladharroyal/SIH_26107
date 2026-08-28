@@ -12,7 +12,8 @@ from typing import List, Dict, Any, Optional
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("lab_locator")
 
-RAW_DIR = Path("./raw_data")
+BASE_DIR = Path(__file__).resolve().parent.parent
+RAW_DIR = BASE_DIR / "raw_data"
 
 # Core fallback lab directory database
 FALLBACK_LABS = [

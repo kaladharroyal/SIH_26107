@@ -1,0 +1,59 @@
+# Phase 5: Multilingual Support — Detailed Description
+
+## Objective
+
+Every phase so far has assumed English input. But the actual users this problem statement names — MSMEs, consumers, students across India — routinely query in Hindi, in a regional language, or in code-mixed "Hinglish." Phase 5 extends the pipeline to handle that without rebuilding what's already been proven to work: the goal is to translate at the edges (query in, response out) rather than rebuild retrieval or generation per-language, since re-running Phases 1-4 separately for each of India's languages isn't remotely tractable for a hackathon scope — or arguably even for production.
+
+The key decision this phase actually resolves, rather than just executes, is one flagged as open back in Phase 2: **whether the multilingual embedding model chosen there is good enough to skip a separate translation step entirely.** Phase 5 is where that gets tested for real instead of assumed.
+
+---
+
+## Step 17: Query Translation / Multilingual Retrieval Strategy
+
+There are two fundamentally different architectures here, and picking between them is the actual work of this step — not just wiring up a translation API.
+
+**Option A — Translate-then-retrieve**: detect the query's language, machine-translate to English, run the entire Phase 2/3/4 pipeline unchanged, translate the response back. Simple, reuses everything, but adds latency (two translation calls) and — more importantly — translation errors compound: a mistranslated technical term ("पीतल" as generic "metal" instead of "brass") can send retrieval to the wrong category before generation even starts.
+
+**Option B — Direct multilingual embedding**: since Phase 2 already chose BGE-M3 specifically for multilingual support, skip translation and embed the Hindi/regional query directly against the same English-content vector index. This only works if the embedding model actually places semantically-equivalent Hindi and English text close together in vector space for *this specific domain's vocabulary* — general multilingual benchmarks don't guarantee that for BIS-specific technical and regulatory terms.
+
+The honest position: **this needs to be tested against real queries before committing**, not decided on paper. Concretely — take a set of Hindi queries covering the categories from Phase 1's taxonomy (certification, hallmarking, consumer complaints), embed them directly with BGE-M3 against the existing English chunk index, and check whether the top retrieved chunks are actually correct. If precision holds up, Option B is strictly better (lower latency, no compounding translation error). If it degrades meaningfully, fall back to Option A for retrieval specifically, while still trying to preserve Option B's simplicity for generation.
+
+A likely middle ground worth testing rather than assuming either extreme: **hybrid retrieval (Step 6 from Phase 2) may need language-aware handling** — the sparse/BM25 side of hybrid search is essentially useless across languages (a Hindi query won't keyword-match English clause text), so for non-English queries the fusion may need to lean harder on the dense/semantic path, with BM25's contribution reduced or dropped rather than weighted equally as it is for English queries.
+
+**IS numbers, clause numbers, and scheme names (CRS, FMCS, ISI) stay untranslated regardless of architecture** — these are identifiers, not prose, and translating "IS 1786" or garbling "FMCS" defeats the entire point of a citeable, verifiable answer.
+
+---
+
+## Step 18: Response Translation
+
+Once Phase 3's grounded English answer is generated (with its citations), it gets translated back to the query's language for the final response.
+
+The same untranslated-identifiers rule applies in reverse and matters even more here: a citation like "As per IS 1786:2008, Clause 4.2" needs to render with the IS number and clause number character-for-character identical to what a user would find on the actual document — a machine translation pass has no business touching that string. This means response translation can't be a single blind pass over the whole answer; it needs to preserve citation spans as translation-exempt segments, translating only the surrounding explanatory prose.
+
+Numeric figures (the ₹1,000 application fee, the 90-day test-report validity from Phase 1's verified FAQ content) similarly should pass through untouched — translation models occasionally mangle numerals or units when they're embedded in prose, and there's zero tolerance for that kind of error in a compliance-fee context.
+
+---
+
+## Step 19: End-to-End Multilingual Testing
+
+Test on **Hindi plus at least one additional regional language**, and test for retrieval accuracy specifically — not just fluency of the final translated prose. This distinction matters: a response can read fluently in Hindi while having retrieved the wrong clause entirely, and fluency is what a casual demo-runner notices first while accuracy is what actually matters for the use case.
+
+Concretely worth checking, building directly on Phase 2's untested-assumption list:
+- Does the chosen embedding approach (whichever Step 17 settles on) hold up specifically on BIS's technical/regulatory vocabulary, not just conversational Hindi?
+- Does code-mixed input ("mera LED bulb ke liye BIS certification chahiye") — extremely common in how Indian users actually type — break language detection, given it's neither purely Hindi nor purely English?
+- Do citations survive the round-trip (English generation → translation → checking the IS number/clause number are still exactly correct) without corruption?
+- For the regional language beyond Hindi: is there enough BIS content in that language at all, or does the answer necessarily end up as English content translated on the fly rather than any native-language source material? (Worth being upfront that this is likely the case — BIS's own site is primarily English/Hindi bilingual, as seen throughout Phase 1's scraping, so a third language is realistically always a translation of English/Hindi source content, not access to a genuinely separate corpus.)
+
+---
+
+## What Phase 5 depends on from Phases 1-4
+
+- Phase 2's embedding model choice (BGE-M3, selected specifically for multilingual capability) — this phase is where that choice gets validated or revised
+- Phase 3's citation formatting structure — response translation can only safely exempt citation spans if they're already cleanly delimited/structured, not embedded loosely in free prose
+- Phase 1's observation that BIS content itself is primarily English/Hindi — this sets realistic expectations for what "multilingual support" can mean for languages beyond those two
+
+## What's genuinely uncertain going in
+
+- The Option A vs. Option B retrieval architecture decision above — flagged deliberately as untested rather than picking one to sound decisive, since picking wrong means redoing real work
+- Whether citation-span preservation is reliable with off-the-shelf translation APIs, or needs a custom pass (e.g., mask citations before translation, restore after) — worth testing before trusting either
+- Real corpus availability for any regional language beyond Hindi — this may turn out to be a translation-quality problem rather than a retrieval problem, which changes where testing effort should go

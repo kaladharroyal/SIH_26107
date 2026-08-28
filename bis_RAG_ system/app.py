@@ -3,8 +3,18 @@ Phase 6: Web UI & Full System Integration Server (app.py)
 FastAPI server providing REST endpoints for Chat, Sub-Flow Routing, Citation Viewing, and Feedback Logging.
 """
 
+import sys
 import logging
+from pathlib import Path
 from typing import Dict, Any, Optional
+
+# Add src to python path for clean modular imports
+BASE_DIR = Path(__file__).resolve().parent
+SRC_DIR = BASE_DIR / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse

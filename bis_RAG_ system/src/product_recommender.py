@@ -12,7 +12,8 @@ from typing import List, Dict, Any
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("product_recommender")
 
-RAW_DIR = Path("./raw_data")
+BASE_DIR = Path(__file__).resolve().parent.parent
+RAW_DIR = BASE_DIR / "raw_data"
 
 # Core product-to-standard mapping database
 PRODUCT_DATABASE = [

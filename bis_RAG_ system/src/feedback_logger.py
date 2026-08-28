@@ -13,7 +13,8 @@ from typing import Dict, Any, List
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("feedback_logger")
 
-DB_PATH = Path("./bis_feedback.db")
+BASE_DIR = Path(__file__).resolve().parent.parent
+DB_PATH = BASE_DIR / "bis_feedback.db"
 
 
 class FeedbackLogger:
