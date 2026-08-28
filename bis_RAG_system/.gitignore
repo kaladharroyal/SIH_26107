@@ -39,11 +39,14 @@ raw_data/
 *.pdf
 **/*.pdf
 
-# Large generated chunk corpus
+# Large generated chunk corpus & vector indexes
 processed_chunks.jsonl
 **/processed_chunks.jsonl
 processed_chunks_legacy_backup.jsonl
 **/processed_chunks_legacy_backup.jsonl
+vector_index/
+**/vector_index/
+*.pkl
 
 # ------------------------------------------------------------------------------
 # Ingestion Checkpoints & Temporary Processing Files

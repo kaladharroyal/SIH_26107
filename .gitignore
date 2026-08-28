@@ -30,6 +30,9 @@ processed_chunks.jsonl
 **/processed_chunks.jsonl
 processed_chunks_legacy_backup.jsonl
 **/processed_chunks_legacy_backup.jsonl
+vector_index/
+**/vector_index/
+*.pkl
 *.pdf
 temp_*
 *.log

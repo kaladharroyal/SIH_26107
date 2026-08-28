@@ -3,6 +3,10 @@ Phase 2, Step 8: Standalone Retrieval Benchmark & Test Suite
 Evaluates Top-1 and Top-5 retrieval precision on realistic BIS queries
 (Product certification, Hallmarking, Steel standards, Consumer FAQs).
 """
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
 
 import logging
 from retrieval import HybridRetrievalPipeline
