@@ -53,5 +53,3 @@ A detail worth getting right here: FAQ-sourced answers and clause-sourced answer
 - Where to set the confidence threshold — this needs actual calibration against the test query set from Phase 2 (comparing gate decisions against manual "should this have refused?" judgments), not a number picked in advance
 - Whether a single confidence gate is enough, or whether certain categories need stricter gating than others — a wrong answer about a consumer complaint process is lower-stakes than a wrong answer about mandatory certification requirements, and the gate arguably shouldn't treat them identically
 - How much of the "point to the official channel" fallback message can be pre-written per category vs. needs to be generated — pre-written is safer (zero hallucination risk in the fallback itself) but less naturally responsive to the specific question asked
-
-Want me to build this out — the grounding prompt, the confidence gate logic, and citation formatter — with actual test cases run against Phase 1's real FAQ content, the way I did for Phase 1's parser?
