@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bureau of Indian Standards (BIS) AI Assistant</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-card: #1e293b;
+            --accent-color: #38bdf8;
+            --accent-hover: #0284c7;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border-color: #334155;
+            --badge-official: #059669;
+            --badge-faq: #d97706;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            height: 100vh;
+        }
+
+        .sidebar {
+            width: 320px;
+            background-color: #0b1120;
+            border-right: 1px solid var(--border-color);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .brand {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--accent-color);
+            margin-bottom: 30px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .nav-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            text-align: left;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .nav-btn:hover, .nav-btn.active {
+            background-color: var(--bg-card);
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--bg-primary);
+        }
+
+        .header {
+            padding: 20px 30px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-container {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 16px 20px;
+            border-radius: 12px;
+            line-height: 1.6;
+        }
+
+        .user-msg {
+            background-color: var(--accent-hover);
+            align-self: flex-end;
+            border-bottom-right-radius: 2px;
+        }
+
+        .assistant-msg {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            align-self: flex-start;
+            border-bottom-left-radius: 2px;
+        }
+
+        .badge-tag {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-right: 6px;
+        }
+        .badge-official { background-color: var(--badge-official); color: white; }
+        .badge-faq { background-color: var(--badge-faq); color: white; }
+
+        .input-bar {
+            padding: 20px 30px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 12px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: white;
+            padding: 14px 18px;
+            border-radius: 8px;
+            font-size: 15px;
+            outline: none;
+        }
+
+        button.send-btn {
+            background-color: var(--accent-color);
+            color: #0f172a;
+            border: none;
+            padding: 14px 24px;
+            border-radius: 8px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .feedback-btns {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+        }
+        .fb-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .fb-btn:hover { border-color: var(--accent-color); color: white; }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="brand">🏛️ BIS AI Assistant</div>
+        <button class="nav-btn active" onclick="showTab('chat')">💬 AI Compliance Chat</button>
+        <button class="nav-btn" onclick="showTab('product')">📦 Product Standard Recommender</button>
+        <button class="nav-btn" onclick="showTab('labs')">🧪 LIMS Lab Locator</button>
+        <button class="nav-btn" onclick="showTab('scheme')">📋 Scheme Walkthroughs</button>
+    </div>
+
+    <div class="main-content">
+        <div class="header">
+            <h2 id="tab-title">Multilingual Grounded Compliance Chat</h2>
+            <span style="font-size: 13px; color: var(--text-secondary);">Powered by BGE-M3 & Hybrid Retrieval</span>
+        </div>
+
+        <div id="chat-tab" class="chat-container">
+            <div class="message assistant-msg">
+                <strong>Namaste! 🙏 Welcome to the Bureau of Indian Standards (BIS) AI Assistant.</strong><br>
+                Ask me about Product Certification, Gold Hallmarking, Scheme Walkthroughs, or Lab testing in English, Hindi (हिन्दी), or Hinglish!
+            </div>
+        </div>
+
+        <div class="input-bar">
+            <input type="text" id="query-input" placeholder="Ask a query (e.g. 'mera LED bulb ke liye BIS certification chahiye')..." onkeypress="handleKeyPress(event)">
+            <button class="send-btn" onclick="sendQuery()">Send Query</button>
+        </div>
+    </div>
+
+    <script>
+        async function sendQuery() {
+            const input = document.getElementById("query-input");
+            const query = input.value.trim();
+            if (!query) return;
+
+            const chatContainer = document.getElementById("chat-tab");
+
+            // User Message
+            const userDiv = document.createElement("div");
+            userDiv.className = "message user-msg";
+            userDiv.innerText = query;
+            chatContainer.appendChild(userDiv);
+
+            input.value = "";
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            // Assistant Loading
+            const botDiv = document.createElement("div");
+            botDiv.className = "message assistant-msg";
+            botDiv.innerHTML = "<em>Analyzing standards & verifying context...</em>";
+            chatContainer.appendChild(botDiv);
+
+            try {
+                const response = await fetch("/api/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ query: query })
+                });
+                const data = await response.json();
+
+                let responseHtml = data.response.replace(/\n/g, "<br>");
+                botDiv.innerHTML = `
+                    <div style="font-size: 12px; color: var(--accent-color); margin-bottom: 6px;">
+                        Language Detected: <strong>${data.detected_language}</strong> | Sub-Flow: <strong>${data.sub_flow.toUpperCase()}</strong>
+                    </div>
+                    <div>${responseHtml}</div>
+                    <div class="feedback-btns">
+                        <button class="fb-btn" onclick="submitFeedback(${data.log_id}, 1)">👍 Useful</button>
+                        <button class="fb-btn" onclick="submitFeedback(${data.log_id}, -1)">👎 Needs Fix</button>
+                    </div>
+                `;
+            } catch (err) {
+                botDiv.innerHTML = "<span style='color: #ef4444;'>Error generating response. Please try again.</span>";
+            }
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        async function submitFeedback(logId, rating) {
+            await fetch("/api/feedback", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ log_id: logId, rating: rating })
+            });
+            alert("Thank you for your feedback! It helps improve BIS compliance retrieval.");
+        }
+
+        function handleKeyPress(e) {
+            if (e.key === "Enter") sendQuery();
+        }
+
+        function showTab(tabName) {
+            document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById('tab-title').innerText = tabName.toUpperCase() + " ASSISTANT SURFACE";
+        }
+    </script>
+</body>
+</html>
