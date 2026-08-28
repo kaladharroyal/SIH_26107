@@ -1,0 +1,55 @@
+# Phase 7: Testing & Demo Prep — Detailed Description
+
+## Objective
+
+Phases 1-6 built the system; Phase 7 is where you find out whether it actually works and package that evidence for judges. The design principle carried through from every earlier phase applies here too: **don't claim what you haven't verified**. Everywhere in Phases 1-6 I flagged an untested assumption (reranker score calibration, multilingual retrieval precision, whether the intent router genuinely reuses across backend/frontend), Phase 7 is where those get closed out — not glossed over in the demo.
+
+---
+
+## Step 22: Realistic Test Set Across Personas
+
+Build a test set of queries stratified by the three user types the problem statement explicitly names — MSME owner, student, consumer — because each asks fundamentally differently-shaped questions even when the underlying topic overlaps:
+- **MSME owner**: procedural, fee-sensitive, often product-specific ("do I need a licence for my product, and what will it cost me")
+- **Student**: exploratory, definitional ("what's the difference between ISI mark and hallmark")
+- **Consumer**: complaint-shaped or verification-shaped ("is this jewellery's hallmark genuine," "my product broke, what are my rights")
+
+For each persona, draw queries from content Phase 1 already verified rather than inventing hypotheticals — the 28 real Q&A pairs from the Product Certification FAQ, the hallmarking consumer-compensation FAQ, the consumer complaint process pages all have unambiguous ground-truth answers already sitting in the corpus. This makes measuring "did retrieval get the right chunk" and "did generation cite it correctly" objective rather than a judgment call.
+
+Measure two things separately, because they fail independently: **retrieval accuracy** (top chunk is the actually-correct source) and **citation correctness** (the generated answer's citation matches what was retrieved, with the right IS number/clause/FAQ reference, not a plausible-sounding but wrong one). A system can retrieve correctly and still cite wrong, or vice versa — conflating the two metrics hides which layer needs fixing.
+
+---
+
+## Step 23: Edge Case Stress-Testing
+
+Three categories worth deliberately testing, each tracing back to a gap flagged earlier rather than invented fresh:
+
+**Ambiguous product descriptions** — directly follows from Phase 4's flagged uncertainty about whether fuzzy/full-text matching handles real user phrasing ("solar panel" vs. the official "Crystalline Silicon Terrestrial Photovoltaic Module" category name). This is where Phase 4's confidence-gate-for-structured-lookup either proves itself or reveals it needs the embedding-based matching fallback instead.
+
+**Outdated standard queries** — a user asking about a standard that's since been revised or superseded. This tests whether the `superseded_by` field in Phase 1's schema (flagged there as present but never actually populated) causes a visible failure here — if it does, that's the moment to go back and close that gap rather than let the demo surface a stale-standard answer as if it were current.
+
+**Mixed-language input** — "mera LED bulb ke liye BIS certification chahiye" was flagged in Phase 5 as a real risk to language detection. Testing it here is where Phase 5's Option A/B retrieval decision gets its final validation under realistic, not clean, input.
+
+---
+
+## Step 24: Demo Script
+
+The strongest framing for judges isn't "look at all these features" — it's **built around the grounding/citation mechanism specifically**, because that's the differentiator over a generic LLM wrapper someone could build with a single prompt and no RAG pipeline at all. Concretely, the demo should show, in sequence:
+1. A query answered correctly with a clickable citation (Phase 6's Step 19) — proving the answer isn't hallucinated
+2. A query the system correctly refuses or hedges on (Phase 3's confidence gate firing as designed) — this is counterintuitively a stronger demo moment than another correct answer, because it's the proof that the system knows its own limits rather than confidently guessing outside its corpus
+3. One structured sub-flow (Phase 4) rendering as structured UI rather than prose (Phase 6's Step 20) — showing the product recommender or lab locator returning a direct, non-generated answer
+4. If Phase 5 held up under testing, one non-English query — but only include this if Step 19's stress test actually validated it; a multilingual demo that breaks live is worse than not claiming multilingual support at all
+
+The feedback loop (Phase 6's Step 21) is worth narrating even briefly, since it's what turns "we built a chatbot" into "we built a system designed to get measurably better" — a materially stronger claim for judges than a static demo, provided Step 21's honest caveat (voluntary feedback engagement is usually low) doesn't get overstated.
+
+---
+
+## What Phase 7 depends on from Phases 1-6
+
+- Every flagged-but-unresolved uncertainty across Phases 1-6 — this phase's actual job is closing them out with evidence, not accumulating more unverified design
+- Phase 1's FAQ ground-truth content, reused directly as the test set's answer key
+- Phase 3's confidence gate and Phase 4's structured sub-flows, both of which need to be demonstrably *working*, not just built, by the time Step 24's script gets written
+
+## What's genuinely uncertain going in
+
+- How many of Phases 1-6's flagged gaps (product_standard_map population, JS-rendered lab/standards lookups, superseded_by tracking, Option A/B multilingual decision) are realistically closeable before a demo deadline — this phase can't manufacture time, only prioritize which gaps matter most for the demo script specifically versus which can be honestly disclosed as future work
+- Whether the "correct refusal" demo moment (Step 24, point 2) is even findable without deliberately constructing an out-of-corpus query — which is fine for a demo, but worth being clear internally that this is a designed test case, not a naturally-occurring one
