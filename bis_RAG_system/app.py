@@ -8,23 +8,23 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-# Add src to python path for clean modular imports
+# Add src, tests, and root to python path for clean modular imports
 BASE_DIR = Path(__file__).resolve().parent
 SRC_DIR = BASE_DIR / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
+TESTS_DIR = BASE_DIR / "tests"
+for path in [SRC_DIR, TESTS_DIR, BASE_DIR]:
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from test_phase5 import MultilingualBISPipelne
-from feedback_logger import FeedbackLogger
-from lab_locator import LabLocator
-from product_recommender import ProductRecommender
+from tests.test_phase5 import MultilingualBISPipelne
+from src.feedback_logger import FeedbackLogger
+from src.lab_locator import LabLocator
+from src.product_recommender import ProductRecommender
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("bis_web_app")
