@@ -1,0 +1,21 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Environment / Virtualenv
+venv/
+.venv/
+env/
+
+# Scraped Data & Parsed Chunks (Too large for Git repo)
+raw_data/
+processed_chunks.jsonl
+temp_*
+*.pdf
+*.log
+
+# Antigravity / IDE artifacts
+.planning/
+.agents/

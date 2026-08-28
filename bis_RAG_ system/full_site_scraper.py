@@ -218,12 +218,19 @@ class FullSiteScraper:
             pdf_links = []
             html_links = []
 
+            IGNORED_EXTS = (
+                ".pdf", ".ts", ".mp4", ".avi", ".mkv", ".mov", ".zip", ".tar", ".gz",
+                ".exe", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".css", ".js", ".mp3"
+            )
+
             for a in soup.find_all("a", href=True):
                 full_link = urljoin(url, a["href"]).split("#")[0]
-                if full_link.lower().endswith(".pdf"):
+                link_lower = full_link.lower()
+                if link_lower.endswith(".pdf"):
                     pdf_links.append(full_link)
                 elif is_allowed_url(full_link) and full_link not in self.visited_urls:
-                    html_links.append(full_link)
+                    if not any(link_lower.endswith(ext) for ext in IGNORED_EXTS):
+                        html_links.append(full_link)
 
             log.info(f"Extracted {len(pdf_links)} PDFs and {len(html_links)} child links from {url}")
 
