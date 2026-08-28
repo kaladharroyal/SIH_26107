@@ -15,8 +15,12 @@ import json
 import logging
 from pathlib import Path
 
-import psycopg2
-from psycopg2.extras import execute_values
+try:
+    import psycopg2
+    from psycopg2.extras import execute_values
+    HAS_PSYCOPG2 = True
+except ImportError:
+    HAS_PSYCOPG2 = False
 
 log = logging.getLogger("loader")
 
