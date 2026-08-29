@@ -39,8 +39,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-log.info("Initializing BIS RAG Pipeline for Web Server...")
-pipeline = BISRAGPipeline()
+import asyncio
+import time
+
+DEMO_MIN_RESPONSE_SECONDS = float(os.getenv("DEMO_MIN_RESPONSE_SECONDS", "10.0"))
+
+
+async def enforce_demo_latency(start_time: float, min_seconds: float = DEMO_MIN_RESPONSE_SECONDS) -> float:
+    """
+    Centralized helper to ensure consistent minimum demo latency without slowing down retrieval or generation.
+    If actual processing took 2s, waits remaining 8s (total 10s).
+    If actual processing took 12s, waits 0s (total 12s).
+    """
+    elapsed = time.monotonic() - start_time
+    remaining = min_seconds - elapsed
+    if remaining > 0:
+        await asyncio.sleep(remaining)
+    return round((time.monotonic() - start_time) * 1000, 2)
+
+
+log.info(f"Initializing BIS RAG Pipeline for Web Server (Demo Min Latency: {DEMO_MIN_RESPONSE_SECONDS}s)...")
+pipeline = BISRAGPipeline(use_fast_retrieval=True)
 
 
 class QueryRequest(BaseModel):
@@ -71,7 +90,9 @@ async def chat_endpoint(req: QueryRequest):
         return JSONResponse({"error": "Query cannot be empty"}, status_code=400)
 
     log.info(f"Received Web Chat Query: '{query_text}'")
+    req_start = time.monotonic()
     result = pipeline.query(query_text, category=req.category)
+    total_elapsed_ms = await enforce_demo_latency(req_start)
 
     return JSONResponse({
         "query": result.get("query"),
@@ -83,6 +104,11 @@ async def chat_endpoint(req: QueryRequest):
         "results": result.get("results"),
         "citations": result.get("citations", []),
         "fallback_used": result.get("fallback_used", False),
+        "provider": result.get("provider"),
+        "model_used": result.get("model_used"),
+        "retrieval_ms": result.get("retrieval_ms"),
+        "generation_ms": result.get("generation_ms"),
+        "total_ms": total_elapsed_ms,
     })
 
 

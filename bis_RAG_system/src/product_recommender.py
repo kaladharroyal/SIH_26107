@@ -81,9 +81,9 @@ class ProductRecommender:
                 return formal_term
         return query.strip()
 
-    def recommend(self, query: str) -> Dict[str, Any]:
+    def recommend(self, query: str, language: str = "English") -> Dict[str, Any]:
         """
-        Recommends applicable Indian Standards for a product.
+        Recommends applicable Indian Standards for a product localized to requested language.
         First checks static product_standard_map.json; if no match, falls back to corpus search.
         """
         if not query or not query.strip():
@@ -102,7 +102,7 @@ class ProductRecommender:
         q_lower = normalized_query.lower()
         q_orig_lower = q_orig.lower()
 
-        log.info(f"Product Recommender -> Original: '{q_orig}' | Normalized: '{normalized_query}'")
+        log.info(f"Product Recommender -> Original: '{q_orig}' | Normalized: '{normalized_query}' | Lang: '{language}'")
 
         # 1. Search in verified 81-record static map
         best_match = None
@@ -134,23 +134,68 @@ class ProductRecommender:
                 highest_score = score
                 best_match = item
 
+        lang_lower = (language or "english").lower()
+
         if best_match and highest_score >= 40:
             std_str = best_match.get("standard", "")
             rev_year = best_match.get("revision_year")
             full_std = f"{std_str}:{rev_year}" if rev_year else std_str
-            mandatory_tag = "MANDATORY UNDER QCO/CRS" if best_match.get("mandatory") else "VOLUNTARY / NOTIFIED"
+            mandatory_tag = "Mandatory under QCO/CRS" if best_match.get("mandatory") else "Voluntary / Notified"
             scheme = best_match.get("scheme", "BIS Product Certification Scheme (Scheme-I)")
             url = best_match.get("source_url", "https://standardsbis.bsbedge.com/")
 
-            formatted = (
-                f"### 📦 Official Product Standard Recommendation\n\n"
-                f"- **Product Category**: {best_match.get('product')}\n"
-                f"- **Applicable Indian Standard**: **{full_std}**\n"
-                f"- **Regulatory Status**: 🛑 **{mandatory_tag}**\n"
-                f"- **Certification Scheme**: {scheme}\n"
-                f"- **Source of Truth**: `{best_match.get('source_of_truth', 'verified_bis_api')}`\n\n"
-                f"🔗 [Official BIS Standard Preview Link]({url})\n"
-            )
+            if "hindi" in lang_lower or lang_lower == "hi":
+                formatted = (
+                    f"### बीआईएस मानक अनुशंसा\n\n"
+                    f"**लागू मानक: {full_std}**\n\n"
+                    f"प्राप्त बीआईएस दस्तावेजों के अनुसार, **{best_match.get('product')}** के लिए लागू भारतीय मानक **{full_std}** है।\n\n"
+                    f"### मुख्य विवरण\n"
+                    f"- **उत्पाद श्रेणी**: {best_match.get('product')}\n"
+                    f"- **नियामक स्थिति**: {mandatory_tag}\n"
+                    f"- **प्रमाणन योजना**: {scheme}\n\n"
+                    f"### स्रोत\n\n"
+                    f"📄 **BIS — {full_std}**\n"
+                    f"[आधिकारिक BIS दस्तावेज खोलें ↗]({url})\n"
+                )
+            elif "telugu" in lang_lower or lang_lower == "te":
+                formatted = (
+                    f"### BIS ప్రమాణ సిఫార్సు\n\n"
+                    f"**వర్తించే ప్రమాణం: {full_std}**\n\n"
+                    f"పొందబడిన BIS రికార్డుల ప్రకారం, **{best_match.get('product')}** కి వర్తించే భారతీయ ప్రమాణం **{full_std}**.\n\n"
+                    f"### ముఖ్యమైన వివరాలు\n"
+                    f"- **ఉత్పత్తి వర్గం**: {best_match.get('product')}\n"
+                    f"- **నియంత్రణ స్థితి**: {mandatory_tag}\n"
+                    f"- **ధృవీకరణ పథకం**: {scheme}\n\n"
+                    f"### మూలం\n\n"
+                    f"📄 **BIS — {full_std}**\n"
+                    f"[అధికారిక BIS పత్రాన్ని తెరవండి ↗]({url})\n"
+                )
+            elif "hinglish" in lang_lower:
+                formatted = (
+                    f"### BIS Standard Recommendation\n\n"
+                    f"**Applicable Standard: {full_std}**\n\n"
+                    f"Retrieved BIS documents ke anusaar, **{best_match.get('product')}** ke liye applicable Indian Standard **{full_std}** hai.\n\n"
+                    f"### Important Details\n"
+                    f"- **Product Category**: {best_match.get('product')}\n"
+                    f"- **Regulatory Status**: {mandatory_tag}\n"
+                    f"- **Certification Scheme**: {scheme}\n\n"
+                    f"### Source\n\n"
+                    f"📄 **BIS — {full_std}**\n"
+                    f"[Open official BIS document ↗]({url})\n"
+                )
+            else:
+                formatted = (
+                    f"### BIS Standard Recommendation\n\n"
+                    f"**Applicable Standard: {full_std}**\n\n"
+                    f"The verified BIS material retrieved for this query identifies **{full_std}** as the applicable Indian Standard for **{best_match.get('product')}**.\n\n"
+                    f"### Key Details\n"
+                    f"- **Product Category**: {best_match.get('product')}\n"
+                    f"- **Regulatory Status**: {mandatory_tag}\n"
+                    f"- **Certification Scheme**: {scheme}\n\n"
+                    f"### Source\n\n"
+                    f"📄 **BIS — {full_std}**\n"
+                    f"[Open official BIS document ↗]({url})\n"
+                )
 
             return {
                 "intent": "product_recommendation",
@@ -171,29 +216,127 @@ class ProductRecommender:
         if self.retrieval is not None:
             log.info(f"Static map had no match for '{q_orig}'. Triggering Phase 2 corpus retrieval fallback...")
             try:
-                corpus_hits = self.retrieval.retrieve(normalized_query, top_n=3, category="is_standard")
-                if not corpus_hits:
-                    corpus_hits = self.retrieval.retrieve(normalized_query, top_n=3, category=None)
+                if hasattr(self.retrieval, "retrieve_fast"):
+                    corpus_hits = self.retrieval.retrieve_fast(normalized_query, top_n=3, category="is_standard")
+                    if not corpus_hits:
+                        corpus_hits = self.retrieval.retrieve_fast(normalized_query, top_n=3, category=None)
+                else:
+                    corpus_hits = self.retrieval.retrieve(normalized_query, top_n=3, category="is_standard")
+                    if not corpus_hits:
+                        corpus_hits = self.retrieval.retrieve(normalized_query, top_n=3, category=None)
 
                 if corpus_hits:
-                    top_hit = corpus_hits[0]
-                    doc = top_hit.get("doc", top_hit)
-                    std_no = doc.get("is_number") or doc.get("standard") or "BIS Standard"
+                    # Select the best hit that matches query specifics
+                    best_doc = corpus_hits[0].get("doc", corpus_hits[0])
+                    identified_std = None
+                    identified_title = None
+
+                    # Check for explicit standard patterns matching the query in retrieved context
+                    q_lower_words = set(re.findall(r"\w+", normalized_query.lower()))
+                    for hit in corpus_hits[:5]:
+                        d = hit.get("doc", hit)
+                        h_title = d.get("clause_title") or d.get("product") or d.get("title") or ""
+                        h_text = d.get("text", "")
+                        h_combined = f"{h_title}\n{h_text}"
+
+                        # Check for cement matches
+                        if "cement" in q_lower_words or "portland" in q_lower_words:
+                            m_cem = re.search(r"\b(IS\s*269(?::\d{4})?|IS\s*1489(?:\s*\(Part\s*\d+\))?(?::\d{4})?|IS\s*455(?::\d{4})?)\b", h_combined, re.IGNORECASE)
+                            if m_cem:
+                                identified_std = m_cem.group(1).strip()
+                                identified_title = "Ordinary Portland Cement (OPC)"
+                                best_doc = d
+                                break
+                        # Check for steel / TMT reinforcement matches
+                        if "tmt" in q_lower_words or "reinforcement" in q_lower_words or "steel" in q_lower_words:
+                            m_steel = re.search(r"\b(IS\s*1786(?::\d{4})?|IS\s*432(?:\s*\(Part\s*\d+\))?(?::\d{4})?|IS\s*2062(?::\d{4})?)\b", h_combined, re.IGNORECASE)
+                            if m_steel:
+                                identified_std = m_steel.group(1).strip()
+                                identified_title = "High strength deformed steel bars and wires for concrete reinforcement (TMT)"
+                                best_doc = d
+                                break
+
+                    doc = best_doc
+                    title = identified_title or doc.get("clause_title") or doc.get("product") or doc.get("title") or "Technical Specification"
+                    std_no = identified_std or doc.get("is_number") or doc.get("standard")
                     rev_yr = doc.get("revision_year", "")
-                    full_std = f"{std_no}:{rev_yr}" if rev_yr else str(std_no)
-                    title = doc.get("clause_title") or doc.get("product") or doc.get("title") or "Technical Specification"
+
+                    if not std_no and title:
+                        match_is = re.search(r"\bIS\s*(\d+)(?::(\d{4}))?", title, re.IGNORECASE)
+                        if match_is:
+                            std_no = f"IS {match_is.group(1)}"
+                            if match_is.group(2) and not rev_yr:
+                                rev_yr = match_is.group(2)
+
+                    std_no = std_no or "BIS Standard"
+                    full_std = f"{std_no}:{rev_yr}" if rev_yr and rev_yr not in str(std_no) and ":" not in str(std_no) else str(std_no)
                     source_url = doc.get("source_url") or "https://www.bis.gov.in/"
                     source_hash = doc.get("source_hash", "")
                     source_of_truth = doc.get("source_of_truth", "verified_bis_pdf")
+                    page_num = doc.get("page_start") or doc.get("page") or doc.get("pdf_page")
 
-                    formatted = (
-                        f"### 📦 Product Standard Recommendation (Corpus Search Result)\n\n"
-                        f"- **Search Term**: {q_orig}\n"
-                        f"- **Applicable Indian Standard**: **{full_std}** ({title})\n"
-                        f"- **Source File**: `{doc.get('source_file', 'BIS Archive')}`\n"
-                        f"- **Source of Truth**: `{source_of_truth}`\n\n"
-                        f"🔗 [Official BIS Source Link]({source_url})\n"
-                    )
+                    target_url = source_url
+                    is_pdf = bool(source_url and ".pdf" in source_url.lower())
+                    if page_num and str(page_num).isdigit() and int(page_num) > 1 and is_pdf and "#page=" not in target_url:
+                        target_url = f"{target_url}#page={int(page_num)}"
+
+                    action_txt = "Open official BIS PDF ↗" if is_pdf else "Open official BIS source ↗"
+
+                    details_lines = []
+                    if title and title != "Technical Specification":
+                        details_lines.append(f"- **Product / Specification**: {title}")
+                    if doc.get("clause_number"):
+                        details_lines.append(f"- **Clause**: Clause {doc.get('clause_number')}")
+                    if doc.get("text"):
+                        clean_excerpt = " ".join(doc.get("text", "").split()[:35])
+                        details_lines.append(f"- **Summary**: {clean_excerpt}...")
+
+                    details_str = "\n".join(details_lines) if details_lines else "- Information identified in verified BIS regulatory records."
+
+                    if "hindi" in lang_lower or lang_lower == "hi":
+                        formatted = (
+                            f"### बीआईएस मानक अनुशंसा\n\n"
+                            f"**लागू मानक: {full_std}**\n\n"
+                            f"प्राप्त बीआईएस दस्तावेजों के अनुसार, इस उत्पाद के लिए लागू भारतीय मानक **{full_std}** है।\n\n"
+                            f"### मुख्य विवरण\n"
+                            f"{details_str}\n\n"
+                            f"### स्रोत\n\n"
+                            f"📄 **BIS — {full_std}**\n"
+                            f"[आधिकारिक BIS दस्तावेज खोलें ↗]({target_url})\n"
+                        )
+                    elif "telugu" in lang_lower or lang_lower == "te":
+                        formatted = (
+                            f"### BIS ప్రమాణ సిఫార్సు\n\n"
+                            f"**వర్తించే ప్రమాణం: {full_std}**\n\n"
+                            f"పొందబడిన BIS రికార్డుల ప్రకారం, ఈ ఉత్పత్తికి వర్తించే భారతీయ ప్రమాణం **{full_std}**.\n\n"
+                            f"### ముఖ్యమైన వివరాలు\n"
+                            f"{details_str}\n\n"
+                            f"### మూలం\n\n"
+                            f"📄 **BIS — {full_std}**\n"
+                            f"[అధికారిక BIS పత్రాన్ని తెరవండి ↗]({target_url})\n"
+                        )
+                    elif "hinglish" in lang_lower:
+                        formatted = (
+                            f"### BIS Standard Recommendation\n\n"
+                            f"**Applicable Standard: {full_std}**\n\n"
+                            f"Retrieved BIS documents ke anusaar, is query ke liye applicable Indian Standard **{full_std}** hai.\n\n"
+                            f"### Important Details\n"
+                            f"{details_str}\n\n"
+                            f"### Source\n\n"
+                            f"📄 **BIS — {full_std}**\n"
+                            f"[Open official BIS document ↗]({target_url})\n"
+                        )
+                    else:
+                        formatted = (
+                            f"### BIS Standard Recommendation\n\n"
+                            f"**Applicable Standard: {full_std}**\n\n"
+                            f"The verified BIS material retrieved for this query identifies **{full_std}** as the applicable Indian Standard.\n\n"
+                            f"### Key Details\n"
+                            f"{details_str}\n\n"
+                            f"### Source\n\n"
+                            f"📄 **BIS — {full_std}**\n"
+                            f"[{action_txt}]({target_url})\n"
+                        )
 
                     return {
                         "intent": "product_recommendation",
@@ -202,14 +345,14 @@ class ProductRecommender:
                         "product_data": {
                             "product": title,
                             "standard": full_std,
-                            "source_url": source_url,
+                            "source_url": target_url,
                             "source_hash": source_hash,
                             "source_of_truth": source_of_truth,
                         },
                         "formatted_text": formatted,
                         "source": "corpus_search_fallback",
                         "provenance": {
-                            "source_url": source_url,
+                            "source_url": target_url,
                             "source_hash": source_hash,
                             "source_of_truth": source_of_truth,
                             "chunk_id": doc.get("chunk_id", ""),
@@ -220,12 +363,33 @@ class ProductRecommender:
                 log.warning(f"Corpus retrieval fallback failed: {e}")
 
         # 3. Default structured guidance if no match
-        formatted_guidance = (
-            f"### 📦 Product Standard Recommendation\n\n"
-            f"Could not find an exact compulsory product mapping for '{q_orig}' in the offline database.\n\n"
-            f"Please verify the mandatory standard directly on the official BIS portal:\n"
-            f"🔗 [Official BIS Compulsory Certification Product List](https://www.bis.gov.in/product-certification/products-under-compulsory-certification/?lang=en)\n"
-        )
+        if "hindi" in lang_lower or lang_lower == "hi":
+            formatted_guidance = (
+                f"### बीआईएस स्रोत से पुष्टि करने में असमर्थ\n\n"
+                f"उपलब्ध BIS सामग्री इस जानकारी की पुष्टि करने के लिए पर्याप्त नहीं है।\n\n"
+                f"कृपया बीआईएस मानकों, प्रमाणन या उपभोक्ता सूचना से संबंधित प्रश्न पूछें।\n\n"
+                f"### स्रोत\n\n"
+                f"📄 **BIS अनिवार्य प्रमाणन निर्देशिका**\n"
+                f"[आधिकारिक BIS पोर्टल खोलें ↗](https://www.bis.gov.in/product-certification/products-under-compulsory-certification/?lang=en)\n"
+            )
+        elif "telugu" in lang_lower or lang_lower == "te":
+            formatted_guidance = (
+                f"### BIS మూలాల నుండి నిర్ధారించలేకపోయాము\n\n"
+                f"లభ్యమైన BIS సమాచారం దీనిని నిర్ధారించడానికి సరిపోదు.\n\n"
+                f"దయచేసి BIS ప్రమాణాలు, ధృవీకరణ లేదా వినియోగదారు సమాచారం గురించి అడగండి.\n\n"
+                f"### మూలం\n\n"
+                f"📄 **BIS తప్పనిసరి ధృవీకరణ డైరెక్టరీ**\n"
+                f"[అధికారిక BIS పోర్టల్‌ను తెరవండి ↗](https://www.bis.gov.in/product-certification/products-under-compulsory-certification/?lang=en)\n"
+            )
+        else:
+            formatted_guidance = (
+                f"### Unable to Confirm from BIS Sources\n\n"
+                f"The retrieved BIS material does not provide enough information to confirm a specific Indian Standard for '{q_orig}'.\n\n"
+                f"Please ask a BIS standards, certification, hallmarking, laboratory, or consumer-information question.\n\n"
+                f"### Source\n\n"
+                f"📄 **BIS Compulsory Certification Directory**\n"
+                f"[Open official BIS portal ↗](https://www.bis.gov.in/product-certification/products-under-compulsory-certification/?lang=en)\n"
+            )
         return {
             "intent": "product_recommendation",
             "flow": "product_recommender",

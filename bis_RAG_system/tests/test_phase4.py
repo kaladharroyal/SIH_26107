@@ -22,6 +22,9 @@ from rag_pipeline import BISRAGPipeline
 from router import QueryIntentRouter
 from scheme_walkthrough import SCHEME_WALKTHROUGHS, SchemeWalkthroughGuide
 
+Phase4Orchestrator = BISRAGPipeline
+
+
 
 class MockRetrievalFallback:
     """Mock retrieval engine for deterministic offline unit testing."""

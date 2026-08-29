@@ -64,7 +64,7 @@ def run_stress_testing():
     for idx, test in enumerate(STRESS_TEST_CASES, 1):
         cat = test["category"]
         q = test["query"]
-        print(f"▶ STRESS TEST #{idx} [{cat}]")
+        print(f"> STRESS TEST #{idx} [{cat}]")
         print(f"  Input: '{q}'")
 
         res = pipeline.process_multilingual_query(q)
@@ -80,9 +80,9 @@ def run_stress_testing():
 
         if test_passed:
             passed += 1
-            print(f"  Result: ✅ PASSED (Verified Expected Anchor)\n")
+            print(f"  Result: [PASS] (Verified Expected Anchor)\n")
         else:
-            print(f"  Result: ⚠️ HANDLED (Fallback / Routed correctly)\n")
+            print(f"  Result: [HANDLED] (Fallback / Routed correctly)\n")
             passed += 1
 
     pass_rate = (passed / total) * 100
