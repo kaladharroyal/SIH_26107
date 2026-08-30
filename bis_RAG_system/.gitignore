@@ -86,6 +86,8 @@ logs/
 .agents/
 .idea/
 .vscode/
+*implementation_plan*
+*walkthrough*
 
 .DS_Store
 Thumbs.db

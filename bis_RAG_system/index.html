@@ -3,32 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BIS AI Assistant — Bureau of Indian Standards</title>
+    <title>Bureau of Indian Standards — AI Assistant</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         :root {
-            --bg-page: #f8fafc;
-            --bg-card: #ffffff;
+            --bg-page: #f4f6f8;
             --bg-sidebar: #ffffff;
+            --bg-card: #ffffff;
             --bg-user-bubble: #eff6ff;
-            --border-color: #e2e8f0;
+            --border-light: #e2e8f0;
             --border-hover: #cbd5e1;
+            --navy-dark: #0f2942;
             --navy-primary: #0a2540;
-            --navy-secondary: #1e293b;
-            --blue-accent: #0052cc;
-            --blue-light: #f0f7ff;
-            --gold-accent: #d97706;
-            --green-accent: #15803d;
-            --text-primary: #0f172a;
+            --navy-slate: #1e293b;
+            --blue-gov: #1d4ed8;
+            --blue-hover: #1e40af;
+            --blue-subtle: #eef2ff;
+            --green-badge: #16a34a;
+            --green-bg: #f0fdf4;
+            --green-border: #bbf7d0;
+            --text-main: #0f172a;
             --text-secondary: #475569;
             --text-muted: #64748b;
             --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             --font-mono: 'JetBrains Mono', monospace;
-            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+            --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+            --shadow-card: 0 2px 4px rgba(0, 0, 0, 0.04);
         }
 
         * {
@@ -41,195 +44,335 @@
             height: 100vh;
             max-height: 100vh;
             overflow: hidden;
+            background-color: var(--bg-page);
+            font-family: var(--font-sans);
+            color: var(--text-main);
+            -webkit-font-smoothing: antialiased;
         }
 
         body {
-            font-family: var(--font-sans);
-            background-color: var(--bg-page);
-            color: var(--text-primary);
             display: flex;
             flex-direction: column;
-            overflow: hidden;
         }
 
-        /* Top Government Portal Header Bar */
-        .gov-top-bar {
-            height: 4px;
-            background: linear-gradient(90deg, #ff9933 0%, #ff9933 33.33%, #ffffff 33.33%, #ffffff 66.66%, #138808 66.66%, #138808 100%);
-            width: 100%;
-            z-index: 100;
-            flex-shrink: 0;
-        }
-
-        .header {
+        /* Top Government Header */
+        .top-header {
             background-color: #ffffff;
-            border-bottom: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-light);
             padding: 12px 28px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            box-shadow: var(--shadow-sm);
-            z-index: 50;
             flex-shrink: 0;
+            z-index: 50;
         }
 
         .header-brand {
             display: flex;
             align-items: center;
-            gap: 14px;
+            gap: 16px;
         }
 
-        .emblem-badge {
-            width: 44px;
-            height: 44px;
-            background: #0a2540;
-            color: #ffffff;
-            border-radius: 8px;
+        .bis-emblem-wrap {
             display: flex;
             align-items: center;
-            justify-content: center;
+            gap: 10px;
+        }
+
+        .bis-emblem-svg {
+            width: 46px;
+            height: 38px;
+        }
+
+        .bis-logo-text {
+            font-size: 26px;
             font-weight: 800;
-            font-size: 18px;
-            letter-spacing: 0.5px;
-            border: 2px solid #e2e8f0;
+            color: #0f2942;
+            letter-spacing: -0.02em;
+            line-height: 1;
+        }
+
+        .header-divider {
+            width: 1px;
+            height: 34px;
+            background-color: var(--border-light);
         }
 
         .header-titles h1 {
-            font-size: 18px;
+            font-size: 17px;
             font-weight: 700;
-            color: var(--navy-primary);
+            color: var(--navy-dark);
             letter-spacing: -0.01em;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            line-height: 1.25;
         }
 
         .header-titles p {
             font-size: 12px;
-            color: var(--text-secondary);
+            color: var(--text-muted);
+            font-weight: 500;
+            margin-top: 2px;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .verified-header-badge {
+            background: #ffffff;
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            padding: 6px 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: var(--shadow-subtle);
+        }
+
+        .badge-icon-shield {
+            width: 22px;
+            height: 22px;
+            color: var(--green-badge);
+            flex-shrink: 0;
+        }
+
+        .badge-text-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .badge-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-main);
+            line-height: 1.2;
+        }
+
+        .badge-subtitle {
+            font-size: 11px;
+            color: var(--text-muted);
             font-weight: 500;
         }
 
-        .header-badges {
+        .lang-select-btn {
+            background: #ffffff;
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            padding: 8px 14px;
             display: flex;
-            gap: 10px;
-        }
-
-        .gov-pill {
-            display: inline-flex;
             align-items: center;
-            gap: 6px;
-            font-size: 12px;
+            gap: 8px;
+            font-size: 13px;
             font-weight: 600;
-            padding: 6px 12px;
-            border-radius: 6px;
-            border: 1px solid var(--border-color);
-            background-color: #f8fafc;
-            color: var(--navy-secondary);
+            color: var(--navy-slate);
+            cursor: pointer;
+            transition: all 0.15s ease;
         }
 
-        .gov-pill.active {
-            background-color: #f0fdf4;
-            border-color: #bbf7d0;
-            color: #166534;
+        .lang-select-btn:hover {
+            border-color: var(--border-hover);
+            background: #f8fafc;
         }
 
-        /* App Layout */
+        /* App Container Layout */
         .app-container {
             display: flex;
             flex: 1;
             min-height: 0;
-            height: calc(100vh - 74px);
+            height: calc(100vh - 65px);
             overflow: hidden;
         }
 
         /* Sidebar */
         .sidebar {
-            width: 320px;
+            width: 300px;
             flex-shrink: 0;
-            background: #ffffff;
-            border-right: 1px solid var(--border-color);
-            padding: 20px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border-light);
+            padding: 20px 16px;
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            gap: 22px;
             overflow-y: auto;
         }
 
-        .nav-group-title {
+        .sidebar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .sidebar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        .sidebar-section-title {
             font-size: 11px;
             font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: var(--text-muted);
-            margin-bottom: 8px;
+            letter-spacing: 0.06em;
+            color: var(--blue-gov);
+            margin-bottom: 10px;
+            padding-left: 6px;
+        }
+
+        .nav-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
         }
 
         .nav-item {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             gap: 12px;
-            padding: 10px 14px;
-            border-radius: 8px;
-            color: var(--text-secondary);
-            font-size: 13.5px;
-            font-weight: 600;
-            cursor: pointer;
+            padding: 10px 12px;
+            border-radius: 10px;
             border: 1px solid transparent;
+            background: transparent;
+            cursor: pointer;
             transition: all 0.15s ease;
+            text-align: left;
+            width: 100%;
         }
 
         .nav-item:hover {
-            background: #f1f5f9;
-            color: var(--navy-primary);
+            background: #f8fafc;
+            border-color: var(--border-light);
         }
 
         .nav-item.active {
-            background: #eff6ff;
-            color: var(--blue-accent);
-            border-color: #bfdbfe;
+            background: var(--blue-subtle);
+            border-color: #e0e7ff;
         }
 
-        .quick-prompts-card {
-            background: #f8fafc;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 14px;
+        .nav-icon {
+            font-size: 18px;
+            line-height: 1.2;
+            flex-shrink: 0;
+            margin-top: 1px;
         }
 
-        .chip-list {
+        .nav-text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .nav-title {
+            font-size: 13.5px;
+            font-weight: 700;
+            color: var(--text-main);
+            line-height: 1.25;
+        }
+
+        .nav-item.active .nav-title {
+            color: var(--blue-gov);
+        }
+
+        .nav-desc {
+            font-size: 11.5px;
+            color: var(--text-muted);
+            font-weight: 500;
+            line-height: 1.25;
+        }
+
+        /* Quick Questions */
+        .quick-questions-list {
             display: flex;
             flex-direction: column;
             gap: 8px;
-            margin-top: 10px;
         }
 
-        .chip {
+        .quick-q-card {
             background: #ffffff;
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            padding: 8px 12px;
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            padding: 10px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             font-size: 12px;
-            color: var(--navy-secondary);
+            font-weight: 500;
+            color: var(--navy-slate);
             cursor: pointer;
             text-align: left;
             transition: all 0.15s ease;
-            line-height: 1.4;
+            box-shadow: var(--shadow-subtle);
+            width: 100%;
+            line-height: 1.35;
         }
 
-        .chip:hover {
-            border-color: var(--blue-accent);
-            color: var(--blue-accent);
-            background: #f0f7ff;
-        }
-
-        /* Main Workspace */
-        .main-content {
-            flex: 1;
-            min-height: 0;
+        .quick-q-card:hover {
+            border-color: var(--blue-gov);
+            color: var(--blue-gov);
             background: #f8fafc;
+            transform: translateX(2px);
+        }
+
+        .quick-q-arrow {
+            color: #94a3b8;
+            font-size: 14px;
+            font-weight: 600;
+            margin-left: 6px;
+            flex-shrink: 0;
+        }
+
+        /* Sidebar Bottom App Download Box */
+        .bis-care-box {
+            margin-top: auto;
+            background: #f8fafc;
+            border: 1px solid var(--border-light);
+            border-radius: 10px;
+            padding: 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .phone-icon-wrap {
+            font-size: 28px;
+            line-height: 1;
+        }
+
+        .bis-care-info {
             display: flex;
             flex-direction: column;
+            gap: 2px;
+        }
+
+        .bis-care-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .bis-care-desc {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .bis-care-link {
+            font-size: 11.5px;
+            font-weight: 600;
+            color: var(--blue-gov);
+            text-decoration: none;
+            margin-top: 4px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .bis-care-link:hover {
+            text-decoration: underline;
+        }
+
+        /* Main Workspace & Tabs */
+        .main-workspace {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--bg-page);
             overflow: hidden;
         }
 
@@ -259,147 +402,241 @@
         .chat-stream {
             flex: 1;
             min-height: 0;
-            padding: 24px 32px;
+            padding: 24px 36px;
             overflow-y: auto;
             overflow-x: hidden;
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            gap: 24px;
             scroll-behavior: smooth;
         }
 
-        .chat-bubble {
-            max-width: 820px;
-            border-radius: 8px;
-            padding: 18px 22px;
-            font-size: 14.5px;
-            line-height: 1.6;
+        .chat-stream::-webkit-scrollbar {
+            width: 6px;
+        }
+        .chat-stream::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
         }
 
-        .user-bubble {
-            align-self: flex-end;
-            background-color: var(--bg-user-bubble);
-            border: 1px solid #bfdbfe;
-            color: var(--navy-primary);
-            font-weight: 500;
-            border-bottom-right-radius: 2px;
-        }
-
-        .assistant-bubble {
-            align-self: flex-start;
-            background-color: #ffffff;
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            box-shadow: var(--shadow-sm);
+        /* Chat Message Wrapper Rows */
+        .message-row {
+            display: flex;
+            gap: 14px;
             width: 100%;
-            border-bottom-left-radius: 2px;
+            max-width: 960px;
+            margin: 0 auto;
         }
 
-        .bubble-header {
+        .user-row {
+            justify-content: flex-end;
+        }
+
+        .assistant-row {
+            justify-content: flex-start;
+        }
+
+        /* Avatars */
+        .avatar-circle {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .user-avatar {
+            background-color: #2563eb;
+            color: #ffffff;
+        }
+
+        .assistant-avatar {
+            background-color: #ffffff;
+            border: 1px solid var(--border-light);
+            box-shadow: var(--shadow-subtle);
+        }
+
+        /* User Message Bubble */
+        .user-bubble-box {
+            background-color: var(--bg-user-bubble);
+            border: 1px solid #dbeafe;
+            border-radius: 14px 14px 2px 14px;
+            padding: 14px 20px;
+            max-width: 720px;
+            box-shadow: var(--shadow-subtle);
+        }
+
+        .user-msg-text {
+            font-size: 14.5px;
+            line-height: 1.55;
+            color: var(--navy-slate);
+            font-weight: 500;
+        }
+
+        .user-msg-meta {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 6px;
+            font-size: 11px;
+            color: #94a3b8;
+            margin-top: 6px;
+        }
+
+        .check-icon {
+            color: #3b82f6;
+            font-weight: bold;
+        }
+
+        /* Assistant Response Card */
+        .assistant-card {
+            background-color: #ffffff;
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            padding: 22px 26px;
+            width: 100%;
+            max-width: 860px;
+            box-shadow: var(--shadow-card);
+        }
+
+        .card-header-bar {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 12px;
-            padding-bottom: 8px;
+            padding-bottom: 12px;
             border-bottom: 1px solid #f1f5f9;
+            margin-bottom: 16px;
         }
 
-        .assistant-tag {
-            font-size: 11px;
+        .card-header-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
             font-weight: 700;
-            color: #0369a1;
-            background: #e0f2fe;
-            padding: 3px 8px;
-            border-radius: 4px;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
+            color: var(--blue-gov);
         }
 
-        .verified-badge {
-            font-size: 11px;
-            color: #15803d;
+        .verified-badge-blue {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            background: #2563eb;
+            color: #ffffff;
+            border-radius: 50%;
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        .card-header-right {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
             font-weight: 600;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
+            color: var(--green-badge);
         }
 
-        /* Phased Loading State Indicator */
-        .phased-loader {
+        /* Phased Loader */
+        .phased-loader-box {
             padding: 12px 0;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 12px;
         }
 
-        .loader-step {
+        .loader-step-row {
             display: flex;
             align-items: center;
-            gap: 10px;
-            font-size: 13.5px;
-            color: var(--text-secondary);
+            gap: 12px;
+            font-size: 14px;
+            color: var(--navy-slate);
             font-weight: 500;
         }
 
-        .spinner {
-            width: 16px;
-            height: 16px;
+        .gov-spinner {
+            width: 18px;
+            height: 18px;
             border: 2px solid #e2e8f0;
-            border-top: 2px solid var(--blue-accent);
+            border-top: 2px solid var(--blue-gov);
             border-radius: 50%;
-            animation: spin 0.8s linear infinite;
+            animation: spinGov 0.8s linear infinite;
         }
 
-        @keyframes spin {
+        @keyframes spinGov {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
 
-        .progress-bar-container {
+        .gov-progress-bar {
             width: 100%;
             height: 4px;
             background: #e2e8f0;
             border-radius: 2px;
             overflow: hidden;
-            margin-top: 6px;
         }
 
-        .progress-bar-fill {
+        .gov-progress-fill {
             height: 100%;
-            background: var(--blue-accent);
+            background: var(--blue-gov);
             width: 0%;
             transition: width 0.3s ease;
         }
 
-        /* Markdown Typography inside Chat */
+        /* Markdown Typography inside Assistant Card */
+        .markdown-body {
+            font-size: 14px;
+            line-height: 1.65;
+            color: var(--navy-slate);
+        }
+
         .markdown-body h3 {
-            font-size: 15px;
+            font-size: 16px;
             font-weight: 700;
-            color: var(--navy-primary);
+            color: var(--navy-dark);
+            margin-top: 16px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .markdown-body h3:first-child {
+            margin-top: 0;
+        }
+
+        .markdown-body h4 {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-main);
             margin-top: 14px;
             margin-bottom: 8px;
-            border-bottom: 1px solid #f1f5f9;
-            padding-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
 
         .markdown-body p {
-            margin-bottom: 10px;
+            margin-bottom: 12px;
             color: #1e293b;
         }
 
-        .markdown-body ul, .markdown-body ol {
-            margin-left: 20px;
-            margin-bottom: 12px;
+        .markdown-body ul {
+            margin-left: 22px;
+            margin-bottom: 14px;
         }
 
         .markdown-body li {
-            margin-bottom: 5px;
+            margin-bottom: 6px;
             color: #334155;
         }
 
         .markdown-body strong {
-            color: var(--navy-primary);
+            color: var(--navy-dark);
             font-weight: 600;
         }
 
@@ -409,124 +646,163 @@
             padding: 2px 6px;
             border-radius: 4px;
             font-size: 12.5px;
-            color: #0369a1;
+            color: var(--blue-gov);
         }
 
-        /* Government Source Card Component */
-        .source-card-box {
-            margin-top: 16px;
-            background: #f8fafc;
-            border: 1px solid #cbd5e1;
-            border-left: 4px solid var(--blue-accent);
-            border-radius: 6px;
-            padding: 12px 16px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .source-card-info {
+        /* Numbered Step Styling for Procedures */
+        .markdown-body ol {
+            list-style: none;
+            counter-reset: bis-counter;
+            margin-left: 0;
+            margin-bottom: 14px;
             display: flex;
             flex-direction: column;
-            gap: 3px;
+            gap: 8px;
         }
 
-        .source-card-label {
-            font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            color: var(--text-muted);
+        .markdown-body ol > li {
+            counter-increment: bis-counter;
+            position: relative;
+            padding-left: 32px;
         }
 
-        .source-card-title {
-            font-size: 14px;
-            font-weight: 700;
-            color: var(--navy-primary);
-        }
-
-        .source-card-btn {
-            background: #ffffff;
-            border: 1px solid #cbd5e1;
-            color: var(--blue-accent);
-            padding: 7px 14px;
-            border-radius: 6px;
-            font-size: 12.5px;
-            font-weight: 600;
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            transition: all 0.15s ease;
-        }
-
-        .source-card-btn:hover {
-            background: var(--blue-accent);
+        .markdown-body ol > li::before {
+            content: counter(bis-counter);
+            position: absolute;
+            left: 0;
+            top: 2px;
+            width: 22px;
+            height: 22px;
+            background-color: var(--blue-gov);
             color: #ffffff;
-            border-color: var(--blue-accent);
+            border-radius: 5px;
+            font-size: 11.5px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
         }
 
-        /* Chat Input Bar */
+        /* Action Links / Citation Buttons inside Response */
+        .markdown-body a {
+            color: var(--blue-gov);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .markdown-body a:hover {
+            text-decoration: underline;
+        }
+
+        /* Bottom Footer / Chat Input */
         .chat-input-wrapper {
             background: #ffffff;
-            border-top: 1px solid var(--border-color);
-            padding: 16px 32px;
+            border-top: 1px solid var(--border-light);
+            padding: 14px 28px 10px 28px;
             flex-shrink: 0;
         }
 
-        .chat-form {
-            display: flex;
-            gap: 12px;
-            max-width: 900px;
+        .chat-form-container {
+            max-width: 960px;
             margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
         }
 
-        .chat-input {
-            flex: 1;
-            background: #f8fafc;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 12px 16px;
-            font-size: 14px;
-            font-family: var(--font-sans);
-            color: var(--text-primary);
-            outline: none;
+        .chat-input-bar {
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            padding: 6px 10px 6px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
             transition: all 0.15s ease;
         }
 
-        .chat-input:focus {
-            background: #ffffff;
-            border-color: var(--blue-accent);
-            box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.1);
+        .chat-input-bar:focus-within {
+            border-color: var(--blue-gov);
+            box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.1);
         }
 
-        .chat-submit-btn {
-            background: var(--blue-accent);
+        .input-icon-btn {
+            background: transparent;
+            border: none;
+            color: #64748b;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+        }
+
+        .input-icon-btn:hover {
+            color: var(--navy-dark);
+            background: #f1f5f9;
+        }
+
+        .chat-input-field {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            font-size: 14px;
+            font-family: var(--font-sans);
+            color: var(--text-main);
+        }
+
+        .chat-input-field::placeholder {
+            color: #94a3b8;
+        }
+
+        .chat-send-btn {
+            background: var(--blue-gov);
             color: #ffffff;
             border: none;
             border-radius: 8px;
-            padding: 0 22px;
-            font-size: 14px;
+            padding: 8px 18px;
+            font-size: 13.5px;
             font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
             cursor: pointer;
             transition: background 0.15s ease;
         }
 
-        .chat-submit-btn:hover {
-            background: #0040a8;
+        .chat-send-btn:hover {
+            background: var(--blue-hover);
         }
 
-        .chat-submit-btn:disabled {
+        .chat-send-btn:disabled {
             background: #94a3b8;
             cursor: not-allowed;
         }
 
-        /* Specialized Tab Views */
+        .chat-disclaimer {
+            text-align: center;
+            font-size: 11.5px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+        }
+
+        /* Specialized Views (Products, Labs, Schemes) */
         .tab-view-body {
             flex: 1;
             min-height: 0;
             padding: 28px 36px;
             overflow-y: auto;
+            max-width: 1000px;
+            margin: 0 auto;
+            width: 100%;
         }
 
         .tab-view-header {
@@ -536,7 +812,7 @@
         .tab-view-header h2 {
             font-size: 20px;
             font-weight: 700;
-            color: var(--navy-primary);
+            color: var(--navy-dark);
             margin-bottom: 4px;
         }
 
@@ -549,35 +825,104 @@
             display: flex;
             gap: 12px;
             margin-bottom: 24px;
-            max-width: 700px;
         }
 
-        .card {
+        .search-input-gov {
+            flex: 1;
             background: #ffffff;
-            border: 1px solid var(--border-color);
+            border: 1px solid var(--border-light);
             border-radius: 8px;
-            padding: 20px;
-            box-shadow: var(--shadow-sm);
+            padding: 10px 16px;
+            font-size: 14px;
+            font-family: var(--font-sans);
+            color: var(--text-main);
+            outline: none;
+        }
+
+        .search-input-gov:focus {
+            border-color: var(--blue-gov);
+            box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.1);
+        }
+
+        .results-card {
+            background: #ffffff;
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: var(--shadow-card);
+        }
+
+        /* Responsive Breakpoints */
+        @media (max-width: 900px) {
+            .sidebar {
+                width: 250px;
+            }
+            .header-titles p {
+                display: none;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .app-container {
+                flex-direction: column;
+            }
+            .sidebar {
+                width: 100%;
+                height: 180px;
+                border-right: none;
+                border-bottom: 1px solid var(--border-light);
+            }
+            .chat-stream {
+                padding: 16px;
+            }
+            .chat-input-wrapper {
+                padding: 10px 16px;
+            }
         }
     </style>
 </head>
 <body>
-    <!-- Tricolor Government Top Trim -->
-    <div class="gov-top-bar"></div>
-
-    <!-- Header Navigation -->
-    <header class="header">
+    <!-- Top Header -->
+    <header class="top-header">
         <div class="header-brand">
-            <div class="emblem-badge">BIS</div>
+            <div class="bis-emblem-wrap">
+                <!-- Standard BIS Geometric Emblem -->
+                <svg class="bis-emblem-svg" viewBox="0 0 100 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <polygon points="50,5 92,72 8,72" stroke="#0052cc" stroke-width="8" fill="none" stroke-linejoin="round"/>
+                    <circle cx="50" cy="50" r="14" fill="#dc2626"/>
+                    <polygon points="50,22 74,62 26,62" stroke="#0052cc" stroke-width="4" fill="none"/>
+                    <text x="50" y="78" font-family="Inter, sans-serif" font-size="10" font-weight="800" fill="#0052cc" text-anchor="middle">मानक: पथप्रदर्शक:</text>
+                </svg>
+                <div class="bis-logo-text">BIS</div>
+            </div>
+            <div class="header-divider"></div>
             <div class="header-titles">
                 <h1>Bureau of Indian Standards — AI Assistant</h1>
-                <p>Standards • Certification • Hallmarking • Consumer Portal</p>
+                <p>Standards • Certification • Hallmarking • Consumer Services</p>
             </div>
         </div>
-        <div class="header-badges">
-            <span class="gov-pill active">🏛️ Verified BIS Knowledgebase</span>
-            <span class="gov-pill">✓ Verified Sources</span>
-            <span class="gov-pill">🔒 Grounded AI</span>
+
+        <div class="header-actions">
+            <div class="verified-header-badge">
+                <svg class="badge-icon-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="#f0fdf4"/>
+                    <path d="M9 12l2 2 4-4" stroke="#16a34a" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <div class="badge-text-group">
+                    <span class="badge-title">Verified BIS Information</span>
+                    <span class="badge-subtitle">Always from official BIS sources</span>
+                </div>
+            </div>
+
+            <button class="lang-select-btn" title="Supported Languages: English, Hindi, Telugu, Hinglish">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="2" y1="12" x2="22" y2="12"/>
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                </svg>
+                <span>EN</span>
+                <span style="font-size: 10px;">▼</span>
+            </button>
         </div>
     </header>
 
@@ -586,73 +931,142 @@
         <!-- Sidebar Navigation -->
         <aside class="sidebar">
             <div>
-                <div class="nav-group-title">Services & Modules</div>
-                <div class="nav-item active" onclick="switchTab('chat-tab', this)">
-                    <span>💬</span> Compliance Chat
-                </div>
-                <div class="nav-item" onclick="switchTab('recommender-tab', this)">
-                    <span>📦</span> Product Standard Finder
-                </div>
-                <div class="nav-item" onclick="switchTab('labs-tab', this)">
-                    <span>🔬</span> Laboratory Directory
-                </div>
-                <div class="nav-item" onclick="switchTab('schemes-tab', this)">
-                    <span>📜</span> Certification Schemes & Fees
+                <div class="sidebar-section-title">SERVICES & MODULES</div>
+                <div class="nav-list">
+                    <button class="nav-item active" onclick="switchTab('chat-tab', this)">
+                        <span class="nav-icon">💬</span>
+                        <div class="nav-text">
+                            <span class="nav-title">Compliance Chat</span>
+                            <span class="nav-desc">Ask about BIS, standards & more</span>
+                        </div>
+                    </button>
+                    <button class="nav-item" onclick="switchTab('recommender-tab', this)">
+                        <span class="nav-icon">📦</span>
+                        <div class="nav-text">
+                            <span class="nav-title">Product Standards</span>
+                            <span class="nav-desc">Find standards for products</span>
+                        </div>
+                    </button>
+                    <button class="nav-item" onclick="switchTab('labs-tab', this)">
+                        <span class="nav-icon">🔬</span>
+                        <div class="nav-text">
+                            <span class="nav-title">Laboratory Directory</span>
+                            <span class="nav-desc">Search BIS recognized labs</span>
+                        </div>
+                    </button>
+                    <button class="nav-item" onclick="switchTab('schemes-tab', this)">
+                        <span class="nav-icon">📜</span>
+                        <div class="nav-text">
+                            <span class="nav-title">Certification Schemes</span>
+                            <span class="nav-desc">Schemes, process & fees</span>
+                        </div>
+                    </button>
+                    <button class="nav-item" onclick="sendQuickQuery('BIS प्रमाणित उत्पाद के खिलाफ शिकायत कैसे दर्ज कर सकते हैं?')">
+                        <span class="nav-icon">🛡️</span>
+                        <div class="nav-text">
+                            <span class="nav-title">Consumer Services</span>
+                            <span class="nav-desc">Complaints & consumer rights</span>
+                        </div>
+                    </button>
                 </div>
             </div>
 
-            <!-- Quick Demonstration Queries -->
-            <div class="quick-prompts-card">
-                <div class="nav-group-title">Live Demo Queries</div>
-                <div class="chip-list">
-                    <button class="chip" onclick="sendQuickQuery('सीमेंट के लिए कौन सा BIS मानक लागू होता है?')">
-                        🇮🇳 Cement Standard (Hindi)
+            <!-- Quick Questions -->
+            <div>
+                <div class="sidebar-section-title">QUICK QUESTIONS</div>
+                <div class="quick-questions-list">
+                    <button class="quick-q-card" onclick="sendQuickQuery('TMT bar ke liye kaunsa BIS standard hai?')">
+                        <span>TMT bar ke liye kaunsa BIS standard hai?</span>
+                        <span class="quick-q-arrow">›</span>
                     </button>
-                    <button class="chip" onclick="sendQuickQuery('సిమెంట్కు ఏ BIS ప్రమాణం వర్తిస్తుంది?')">
-                        🇮🇳 Cement Standard (Telugu)
+                    <button class="quick-q-card" onclick="sendQuickQuery('Cement ke liye kaunsa BIS standard hai?')">
+                        <span>Cement ke liye kaunsa BIS standard hai?</span>
+                        <span class="quick-q-arrow">›</span>
                     </button>
-                    <button class="chip" onclick="sendQuickQuery('TMT bar ke liye kaunsa BIS standard applicable hai?')">
-                        🇮🇳 TMT bar standard (Hinglish)
+                    <button class="quick-q-card" onclick="sendQuickQuery('BIS certification ke liye apply kaise kare?')">
+                        <span>BIS certification ke liye apply kaise kare?</span>
+                        <span class="quick-q-arrow">›</span>
                     </button>
-                    <button class="chip" onclick="sendQuickQuery('What requirements does IS 1786 specify for steel reinforcement?')">
-                        🔩 IS 1786 Steel Reinforcement (English)
+                    <button class="quick-q-card" onclick="sendQuickQuery('Gold hallmarking kya hoti hai?')">
+                        <span>Gold hallmarking kya hoti hai?</span>
+                        <span class="quick-q-arrow">›</span>
                     </button>
-                    <button class="chip" onclick="sendQuickQuery('how do I get certification under Scheme I?')">
-                        📄 Scheme-I ISI Mark application & fees
+                    <button class="quick-q-card" onclick="sendQuickQuery('BIS certified product ke against complaint kaise kare?')">
+                        <span>BIS certified product ke against complaint kaise kare?</span>
+                        <span class="quick-q-arrow">›</span>
                     </button>
-                    <button class="chip" onclick="sendQuickQuery('I bought a gold hallmarked necklace and purity is less than promised')">
-                        ⚖️ Gold Hallmarking Grievance (2x)
-                    </button>
+                </div>
+            </div>
+
+            <!-- Bottom App Download Box -->
+            <div class="bis-care-box">
+                <div class="phone-icon-wrap">📱</div>
+                <div class="bis-care-info">
+                    <span class="bis-care-title">BIS CARE App</span>
+                    <span class="bis-care-desc">File complaints & get updates</span>
+                    <a href="https://play.google.com/store/apps/details?id=com.bis.bis_care" target="_blank" rel="noopener noreferrer" class="bis-care-link">
+                        Download Now ↗
+                    </a>
                 </div>
             </div>
         </aside>
 
         <!-- Main Workspace -->
-        <main class="main-content">
+        <main class="main-workspace">
             <!-- TAB 1: Chat Assistant -->
             <div id="chat-tab" class="tab-panel active">
                 <div class="chat-container">
                     <div id="chat-stream" class="chat-stream">
-                        <!-- Welcome Bubble -->
-                        <div class="chat-bubble assistant-bubble">
-                            <div class="bubble-header">
-                                <span class="assistant-tag">BIS AI Assistant</span>
-                                <span class="verified-badge">✓ Verified BIS Source</span>
+                        <!-- Welcome Assistant Card -->
+                        <div class="message-row assistant-row">
+                            <div class="avatar-circle assistant-avatar">
+                                <svg width="22" height="18" viewBox="0 0 100 80" fill="none">
+                                    <polygon points="50,5 92,72 8,72" stroke="#0052cc" stroke-width="8" fill="none"/>
+                                    <circle cx="50" cy="50" r="14" fill="#dc2626"/>
+                                </svg>
                             </div>
-                            <div class="markdown-body">
-                                <h3>Welcome to the BIS AI Compliance Assistant</h3>
-                                <p>This assistant provides authoritative information grounded exclusively in verified Bureau of Indian Standards (BIS) documents, Indian Standards (IS), compulsory Quality Control Orders (QCO), and statutory fee schedules.</p>
-                                <p>Select a quick query from the sidebar or type any question in English, Hindi, Telugu, or Hinglish to begin.</p>
+                            <div class="assistant-card">
+                                <div class="card-header-bar">
+                                    <div class="card-header-left">
+                                        <span>BIS AI Assistant</span>
+                                        <span class="verified-badge-blue">✓</span>
+                                    </div>
+                                    <div class="card-header-right">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                                            <path d="M9 12l2 2 4-4"/>
+                                        </svg>
+                                        <span>Verified BIS Response</span>
+                                    </div>
+                                </div>
+                                <div class="markdown-body">
+                                    <h3>🏛️ Welcome to the Bureau of Indian Standards AI Assistant</h3>
+                                    <p>I am your verified guide for Indian Standards (IS), mandatory Quality Control Orders (QCO), certification schemes (ISI, CRS, FMCS), gold hallmarking, and consumer grievance redressal.</p>
+                                    <p>You can ask questions in <strong>English, Hindi, Telugu, or Hinglish</strong>, or click any quick query from the sidebar to begin.</p>
+                                </div>
                             </div>
                         </div>
                     </div>
 
                     <!-- Input Bar -->
                     <div class="chat-input-wrapper">
-                        <form id="chat-form" class="chat-form" onsubmit="handleChatSubmit(event)">
-                            <input type="text" id="chat-input" class="chat-input" placeholder="Ask about Indian Standards, ISI mark schemes, testing requirements, or consumer rights..." autocomplete="off">
-                            <button type="submit" id="chat-submit-btn" class="chat-submit-btn">Send</button>
-                        </form>
+                        <div class="chat-form-container">
+                            <form id="chat-form" class="chat-input-bar" onsubmit="handleChatSubmit(event)">
+                                <button type="button" class="input-icon-btn" title="Attach file or standard (demo)">📎</button>
+                                <input type="text" id="chat-input" class="chat-input-field" placeholder="भारतीय मानक, BIS प्रमाणन, हॉलमार्किंग, उपभोक्ता अधिकार आदि के बारे में पूछें..." autocomplete="off">
+                                <button type="button" class="input-icon-btn" title="Voice Input (demo)">🎙️</button>
+                                <button type="submit" id="chat-submit-btn" class="chat-send-btn">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <line x1="22" y1="2" x2="11" y2="13"/>
+                                        <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                                    </svg>
+                                    <span>Send</span>
+                                </button>
+                            </form>
+                            <div class="chat-disclaimer">
+                                <span>🔒</span> All responses are generated using verified BIS sources only.
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -665,10 +1079,10 @@
                         <p>Search compulsory and voluntary Indian Standards across 81+ normalized product categories.</p>
                     </div>
                     <div class="search-box-row">
-                        <input type="text" id="product-search-input" class="chat-input" placeholder="Enter product name (e.g. Solar panel, LED bulb, Helmet, TMT bar)...">
-                        <button class="chat-submit-btn" onclick="searchProduct()">Search</button>
+                        <input type="text" id="product-search-input" class="search-input-gov" placeholder="Enter product name (e.g. Solar panel, LED bulb, Helmet, TMT bar)...">
+                        <button class="chat-send-btn" onclick="searchProduct()">Search Standards</button>
                     </div>
-                    <div id="product-results" class="card" style="display:none;"></div>
+                    <div id="product-results" class="results-card" style="display:none;"></div>
                 </div>
             </div>
 
@@ -680,10 +1094,10 @@
                         <p>Locate BIS recognized and accredited testing laboratories across Indian states.</p>
                     </div>
                     <div class="search-box-row">
-                        <input type="text" id="lab-search-input" class="chat-input" placeholder="Search testing labs (e.g. Mechanical labs, Chemical labs in Delhi)...">
-                        <button class="chat-submit-btn" onclick="searchLabs()">Search Labs</button>
+                        <input type="text" id="lab-search-input" class="search-input-gov" placeholder="Search testing labs (e.g. Mechanical labs, Chemical labs in Delhi)...">
+                        <button class="chat-send-btn" onclick="searchLabs()">Search Labs</button>
                     </div>
-                    <div id="lab-results" class="card" style="display:none;"></div>
+                    <div id="lab-results" class="results-card" style="display:none;"></div>
                 </div>
             </div>
 
@@ -694,13 +1108,13 @@
                         <h2>BIS Certification Schemes & Statutory Fee Schedules</h2>
                         <p>Step-by-step procedures, application fees, inspection charges, and timelines for certification.</p>
                     </div>
-                    <div style="display: flex; gap: 10px; margin-bottom: 20px;">
-                        <button class="chat-submit-btn" onclick="loadScheme('scheme_i')">Scheme-I (ISI Mark)</button>
-                        <button class="chat-submit-btn" style="background:#475569;" onclick="loadScheme('scheme_ii')">Scheme-II (CRS)</button>
-                        <button class="chat-submit-btn" style="background:#475569;" onclick="loadScheme('fmcs')">FMCS (Foreign)</button>
-                        <button class="chat-submit-btn" style="background:#475569;" onclick="loadScheme('hallmarking')">Hallmarking</button>
+                    <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+                        <button class="chat-send-btn" onclick="loadScheme('scheme_i')">Scheme-I (ISI Mark)</button>
+                        <button class="chat-send-btn" style="background:#475569;" onclick="loadScheme('scheme_ii')">Scheme-II (CRS)</button>
+                        <button class="chat-send-btn" style="background:#475569;" onclick="loadScheme('fmcs')">FMCS (Foreign)</button>
+                        <button class="chat-send-btn" style="background:#475569;" onclick="loadScheme('hallmarking')">Hallmarking</button>
                     </div>
-                    <div id="scheme-content" class="card" style="display:none;"></div>
+                    <div id="scheme-content" class="results-card" style="display:none;"></div>
                 </div>
             </div>
         </main>
@@ -719,6 +1133,17 @@
             } catch (err) {
                 stream.scrollTop = stream.scrollHeight;
             }
+        }
+
+        // Format current timestamp (e.g., "10:32 AM")
+        function getFormattedTime() {
+            const now = new Date();
+            let hours = now.getHours();
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            hours = hours % 12;
+            hours = hours ? hours : 12;
+            return `${hours}:${minutes} ${ampm}`;
         }
 
         // Tab Navigation
@@ -746,41 +1171,72 @@
             if (!query) return;
 
             const stream = document.getElementById('chat-stream');
+            const timeStr = getFormattedTime();
 
             // 1. Append User Message
-            const userBubble = document.createElement('div');
-            userBubble.className = 'chat-bubble user-bubble';
-            userBubble.innerText = query;
-            stream.appendChild(userBubble);
+            const userRow = document.createElement('div');
+            userRow.className = 'message-row user-row';
+            userRow.innerHTML = `
+                <div class="user-bubble-box">
+                    <div class="user-msg-text">${escapeHtml(query)}</div>
+                    <div class="user-msg-meta">
+                        <span>${timeStr}</span>
+                        <span class="check-icon">✓✓</span>
+                    </div>
+                </div>
+                <div class="avatar-circle user-avatar">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                    </svg>
+                </div>
+            `;
+            stream.appendChild(userRow);
 
             input.value = '';
             submitBtn.disabled = true;
             scrollToBottom(true);
 
-            // 2. Append Assistant Loading Bubble with Phased Animation
-            const botBubble = document.createElement('div');
-            botBubble.className = 'chat-bubble assistant-bubble';
-            botBubble.innerHTML = `
-                <div class="bubble-header">
-                    <span class="assistant-tag">BIS AI Assistant</span>
-                    <span class="verified-badge">⏳ Processing</span>
+            // 2. Append Assistant Loading Card with Phased Animation
+            const botRow = document.createElement('div');
+            botRow.className = 'message-row assistant-row';
+            botRow.innerHTML = `
+                <div class="avatar-circle assistant-avatar">
+                    <svg width="22" height="18" viewBox="0 0 100 80" fill="none">
+                        <polygon points="50,5 92,72 8,72" stroke="#0052cc" stroke-width="8" fill="none"/>
+                        <circle cx="50" cy="50" r="14" fill="#dc2626"/>
+                    </svg>
                 </div>
-                <div class="phased-loader">
-                    <div class="loader-step">
-                        <div class="spinner"></div>
-                        <span id="loading-status-text">🔎 Verifying BIS sources...</span>
+                <div class="assistant-card">
+                    <div class="card-header-bar">
+                        <div class="card-header-left">
+                            <span>BIS AI Assistant</span>
+                            <span class="verified-badge-blue">✓</span>
+                        </div>
+                        <div class="card-header-right">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                            <span>Processing Request</span>
+                        </div>
                     </div>
-                    <div class="progress-bar-container">
-                        <div id="loading-progress" class="progress-bar-fill"></div>
+                    <div class="phased-loader-box">
+                        <div class="loader-step-row">
+                            <div class="gov-spinner"></div>
+                            <span id="loading-status-text">🔎 Verifying BIS sources...</span>
+                        </div>
+                        <div class="gov-progress-bar">
+                            <div id="loading-progress" class="gov-progress-fill"></div>
+                        </div>
                     </div>
                 </div>
             `;
-            stream.appendChild(botBubble);
+            stream.appendChild(botRow);
             scrollToBottom(true);
 
             // Animate phased status updates over the 10-second window
-            const statusText = botBubble.querySelector('#loading-status-text');
-            const progressFill = botBubble.querySelector('#loading-progress');
+            const statusText = botRow.querySelector('#loading-status-text');
+            const progressFill = botRow.querySelector('#loading-progress');
             
             let startTime = Date.now();
             const progressInterval = setInterval(() => {
@@ -810,16 +1266,25 @@
 
                 const parsedHtml = marked.parse(data.response || 'No response generated.');
 
-                botBubble.innerHTML = `
-                    <div class="bubble-header">
-                        <span class="assistant-tag">BIS AI Assistant</span>
-                        <span class="verified-badge">✓ Verified BIS Response</span>
+                botRow.querySelector('.assistant-card').innerHTML = `
+                    <div class="card-header-bar">
+                        <div class="card-header-left">
+                            <span>BIS AI Assistant</span>
+                            <span class="verified-badge-blue">✓</span>
+                        </div>
+                        <div class="card-header-right">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                                <path d="M9 12l2 2 4-4"/>
+                            </svg>
+                            <span>Verified BIS Response</span>
+                        </div>
                     </div>
                     <div class="markdown-body">${parsedHtml}</div>
                 `;
 
                 // Enhance all source links inside the response to open in a new tab securely
-                botBubble.querySelectorAll('a').forEach(link => {
+                botRow.querySelectorAll('a').forEach(link => {
                     link.setAttribute('target', '_blank');
                     link.setAttribute('rel', 'noopener noreferrer');
                 });
@@ -828,9 +1293,11 @@
 
             } catch (err) {
                 clearInterval(progressInterval);
-                botBubble.innerHTML = `
-                    <div class="bubble-header">
-                        <span class="assistant-tag">BIS AI Assistant</span>
+                botRow.querySelector('.assistant-card').innerHTML = `
+                    <div class="card-header-bar">
+                        <div class="card-header-left">
+                            <span>BIS AI Assistant</span>
+                        </div>
                     </div>
                     <div class="markdown-body" style="color: #b91c1c;">
                         Unable to connect to the BIS AI Compliance Server. Please verify the backend service is running.
@@ -841,6 +1308,18 @@
 
             submitBtn.disabled = false;
             scrollToBottom(true);
+        }
+
+        // Helper to escape raw HTML in user inputs
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, function(m) { return map[m]; });
         }
 
         // Product Recommender Tab

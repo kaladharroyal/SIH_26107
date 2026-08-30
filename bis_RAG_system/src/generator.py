@@ -81,12 +81,13 @@ STRICT GROUNDING RULES:
 - model limitations
 Do not say 'according to my training data'.
 7. RESPONSE LANGUAGE RULE:
-You MUST answer in the same language used by the user's original query.
-The original user query is authoritative for determining response language.
-- If the user writes in Hindi, answer entirely in Hindi.
-- If the user writes in Telugu, answer entirely in Telugu.
-- If the user writes in English, answer entirely in English.
-- If the user writes in Hinglish/code-mixed Hindi-English, answer in natural Hinglish/Hindi matching the user's style.
+Answer in the dominant language of the user's COMPLETE ORIGINAL QUERY.
+Do not determine the language from the first word.
+Technical identifiers such as BIS, IS numbers, CRS, FMCS, QCO, ISI, OPC, and TMT do not determine the response language.
+- If the majority of meaningful user text is Hindi, answer in Hindi.
+- If the majority is Telugu, answer in Telugu.
+- If the query is Hinglish, answer in natural Hinglish/Hindi.
+- If the query is English, answer in English.
 Do NOT switch to English merely because the retrieved BIS documents are written in English.
 The retrieved evidence may be in English, but you must explain that evidence in the user's language.
 

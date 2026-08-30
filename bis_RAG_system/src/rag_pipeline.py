@@ -173,8 +173,8 @@ class BISRAGPipeline:
                 }
 
             elif intent == "consumer_complaint":
-                log.info(f"Dispatching to ConsumerComplaintHandler for query: '{clean_query[:40]}'")
-                comp_res = self.consumer_complaint.handle_complaint(clean_query)
+                log.info(f"Dispatching to ConsumerComplaintHandler for query: '{clean_query[:40]}' (Lang: {detected_lang})")
+                comp_res = self.consumer_complaint.handle_complaint(clean_query, language=detected_lang)
                 total_ms = round((time.time() - t_start) * 1000, 2)
                 return {
                     "query": clean_query,
