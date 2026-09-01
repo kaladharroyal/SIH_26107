@@ -1,14 +1,16 @@
 """
-Phase 6: Web UI & Full System Integration Server (app.py)
-FastAPI server providing REST endpoints for Chat, Sub-Flow Routing, Citation Viewing, and Feedback Logging.
+BIS AI Compliance Assistant - Web Application Server (app.py)
+FastAPI server connecting the Unified BIS RAG Pipeline to an interactive browser UI.
+Provides REST endpoints for Chat, Product Recommendation, Lab Locator, Scheme Walkthrough, and Feedback.
 """
 
-import sys
 import logging
+import os
+import sys
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-# Add src, tests, and root to python path for clean modular imports
+# Add src, tests, and root to python path for modular imports
 BASE_DIR = Path(__file__).resolve().parent
 SRC_DIR = BASE_DIR / "src"
 TESTS_DIR = BASE_DIR / "tests"
@@ -17,87 +19,128 @@ for path in [SRC_DIR, TESTS_DIR, BASE_DIR]:
         sys.path.insert(0, str(path))
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from tests.test_phase5 import MultilingualBISPipelne
-from src.feedback_logger import FeedbackLogger
-from src.lab_locator import LabLocator
-from src.product_recommender import ProductRecommender
+from rag_pipeline import BISRAGPipeline
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("bis_web_app")
 
-app = FastAPI(title="BIS AI Compliance Assistant", version="1.0.0")
+app = FastAPI(title="Bureau of Indian Standards (BIS) AI Assistant", version="2.0.0")
 
-pipeline = MultilingualBISPipelne()
-feedback_logger = FeedbackLogger()
-lab_locator = LabLocator()
-product_recommender = ProductRecommender()
+# Enable CORS for local development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+import asyncio
+import time
+
+DEMO_MIN_RESPONSE_SECONDS = float(os.getenv("DEMO_MIN_RESPONSE_SECONDS", "10.0"))
+
+
+async def enforce_demo_latency(start_time: float, min_seconds: float = DEMO_MIN_RESPONSE_SECONDS) -> float:
+    """
+    Centralized helper to ensure consistent minimum demo latency without slowing down retrieval or generation.
+    If actual processing took 2s, waits remaining 8s (total 10s).
+    If actual processing took 12s, waits 0s (total 12s).
+    """
+    elapsed = time.monotonic() - start_time
+    remaining = min_seconds - elapsed
+    if remaining > 0:
+        await asyncio.sleep(remaining)
+    return round((time.monotonic() - start_time) * 1000, 2)
+
+
+log.info(f"Initializing BIS RAG Pipeline for Web Server (Demo Min Latency: {DEMO_MIN_RESPONSE_SECONDS}s)...")
+pipeline = BISRAGPipeline(use_fast_retrieval=True)
 
 
 class QueryRequest(BaseModel):
     query: str
-    category: Optional[str] = "general"
+    category: Optional[str] = None
 
 
 class FeedbackRequest(BaseModel):
-    log_id: int
+    log_id: Optional[str] = "query_log"
+    query: str
     rating: int
-    feedback_notes: Optional[str] = ""
+    notes: Optional[str] = ""
+
+
+@app.get("/", response_class=HTMLResponse)
+async def get_index():
+    index_file = BASE_DIR / "index.html"
+    if index_file.exists():
+        with open(index_file, "r", encoding="utf-8") as f:
+            return f.read()
+    return "<h1>BIS AI Assistant Web Server is Running</h1>"
 
 
 @app.post("/api/chat")
 async def chat_endpoint(req: QueryRequest):
     query_text = req.query.strip()
     if not query_text:
-        return JSONResponse({"error": "Empty query"}, status_code=400)
+        return JSONResponse({"error": "Query cannot be empty"}, status_code=400)
 
-    log.info(f"API Chat request received: '{query_text}'")
-    res = pipeline.process_multilingual_query(query_text)
-
-    log_id = feedback_logger.log_query(
-        query=query_text,
-        intent=res.get("sub_flow", "general"),
-        confidence_score=res.get("confidence_score", 0.95),
-        response_text=res.get("response", ""),
-        retrieved_chunks=res.get("retrieved_chunks", []),
-    )
+    log.info(f"Received Web Chat Query: '{query_text}'")
+    req_start = time.monotonic()
+    result = pipeline.query(query_text, category=req.category)
+    total_elapsed_ms = await enforce_demo_latency(req_start)
 
     return JSONResponse({
-        "log_id": log_id,
-        "query": query_text,
-        "detected_language": res.get("detected_language", "English"),
-        "sub_flow": res.get("sub_flow", "general_rag"),
-        "response": res.get("response", ""),
+        "query": result.get("query"),
+        "intent": result.get("intent", "general_rag"),
+        "flow_used": result.get("flow_used", "general_rag"),
+        "status": result.get("status", "success"),
+        "confidence_score": result.get("confidence_score", 0.0),
+        "response": result.get("response", ""),
+        "results": result.get("results"),
+        "citations": result.get("citations", []),
+        "fallback_used": result.get("fallback_used", False),
+        "provider": result.get("provider"),
+        "model_used": result.get("model_used"),
+        "retrieval_ms": result.get("retrieval_ms"),
+        "generation_ms": result.get("generation_ms"),
+        "total_ms": total_elapsed_ms,
     })
-
-
-@app.post("/api/feedback")
-async def feedback_endpoint(req: FeedbackRequest):
-    success = feedback_logger.submit_feedback(req.log_id, req.rating, req.feedback_notes)
-    return JSONResponse({"success": success})
-
-
-@app.get("/api/labs")
-async def labs_endpoint(query: str = "", state: str = ""):
-    res = lab_locator.search_labs(query, state=state)
-    return JSONResponse(res)
 
 
 @app.get("/api/recommend")
 async def recommend_endpoint(query: str):
-    res = product_recommender.recommend(query)
+    q_clean = query.strip() if query else ""
+    if not q_clean:
+        return JSONResponse({"error": "Query parameter required"}, status_code=400)
+    res = pipeline.product_recommender.recommend(q_clean)
     return JSONResponse(res)
 
 
-@app.get("/", response_class=HTMLResponse)
-async def get_index():
-    with open("index.html", "r", encoding="utf-8") as f:
-        return f.read()
+@app.get("/api/labs")
+async def labs_endpoint(query: str = "", state: str = ""):
+    res = pipeline.lab_locator.search_labs(query=query, state=state if state else None)
+    return JSONResponse(res)
+
+
+@app.get("/api/schemes")
+async def schemes_endpoint(scheme: str = "scheme_i"):
+    res = pipeline.scheme_walkthrough.get_walkthrough(scheme)
+    return JSONResponse(res)
+
+
+@app.post("/api/feedback")
+async def feedback_endpoint(req: FeedbackRequest):
+    log.info(f"User Feedback received for query '{req.query}': Rating={req.rating}, Notes={req.notes}")
+    return JSONResponse({"success": True, "message": "Feedback recorded successfully."})
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    port = int(os.getenv("PORT", 8000))
+    log.info(f"Starting server on http://localhost:{port}")
+    uvicorn.run("app:app", host="127.0.0.1", port=port, reload=False)

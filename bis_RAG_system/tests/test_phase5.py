@@ -7,11 +7,13 @@ import sys
 import logging
 from pathlib import Path
 
-# Add src to python path for clean test execution
+# Add src and base to python path for clean test execution
 BASE_DIR = Path(__file__).resolve().parent.parent
 SRC_DIR = BASE_DIR / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+for p in [str(SRC_DIR), str(BASE_DIR)]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
 
 from src.multilingual import MultilingualHandler
 from src.translation_engine import TranslationEngine
@@ -78,22 +80,22 @@ def run_phase5_test_suite():
         q = test["query"]
         expected_code = test["expected_lang"]
 
-        print(f"▶ TEST: {name}")
-        print(f"  Input: '{q}'")
+        safe_q = q.encode('ascii', 'replace').decode()
+        print(f"> TEST: {name}")
+        print(f"  Input: '{safe_q}'")
 
         res = pipeline.process_multilingual_query(q)
         detected_code = res["lang_code"]
 
-        print(f"  Detected Language: {res['detected_language']} (Code: {detected_code})")
-        print(f"  Sub-Flow Routed: {res['sub_flow'].upper()}")
-        print(f"  Output Snippet: {res['response'][:150]}...")
+        safe_snippet = res['response'][:150].encode('ascii', 'replace').decode()
+        print(f"  Output Snippet: {safe_snippet}...")
 
         # Verify IS numbers or fees are preserved in response
         if detected_code == expected_code:
             passed += 1
-            print("  Result: ✅ PASSED\n")
+            print("  Result: [PASS]\n")
         else:
-            print(f"  Result: ❌ FAILED (Expected lang '{expected_code}', got '{detected_code}')\n")
+            print(f"  Result: [FAIL] (Expected lang '{expected_code}', got '{detected_code}')\n")
 
     pass_rate = (passed / total) * 100
     print("=" * 70)
