@@ -541,6 +541,92 @@
             color: var(--green-badge);
         }
 
+        /* Interactive Citation & Provenance Tray */
+        .citation-tray {
+            margin-top: 18px;
+            padding-top: 16px;
+            border-top: 1px solid #e2e8f0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .citation-tray-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .citation-tray-title {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #475569;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .citation-chips-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .citation-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: #f8fafc;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            text-decoration: none;
+            color: #1e293b;
+            font-size: 12.5px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .citation-chip:hover {
+            background: #eff6ff;
+            border-color: #3b82f6;
+            color: #1d4ed8;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 6px rgba(59, 130, 246, 0.15);
+        }
+
+        .chip-badge {
+            font-size: 10.5px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: #e2e8f0;
+            color: #334155;
+        }
+
+        .citation-chip:hover .chip-badge {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .chip-title {
+            max-width: 280px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .chip-external-icon {
+            color: #64748b;
+            flex-shrink: 0;
+        }
+
+        .citation-chip:hover .chip-external-icon {
+            color: #2563eb;
+        }
+
         /* Phased Loader */
         .phased-loader-box {
             padding: 12px 0;
@@ -914,15 +1000,15 @@
                 </div>
             </div>
 
-            <button class="lang-select-btn" title="Supported Languages: English, Hindi, Telugu, Hinglish">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10"/>
-                    <line x1="2" y1="12" x2="22" y2="12"/>
-                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-                </svg>
-                <span>EN</span>
-                <span style="font-size: 10px;">▼</span>
-            </button>
+            <select id="language-select" class="lang-select-btn" title="Supported Languages: English, Hindi, Telugu, Hinglish, Tamil, Bengali">
+                <option value="auto">🌐 Auto-Detect</option>
+                <option value="en" selected>English (EN)</option>
+                <option value="hi">हिंदी (Hindi)</option>
+                <option value="hinglish">Hinglish</option>
+                <option value="te">తెలుగు (Telugu)</option>
+                <option value="ta">தமிழ் (Tamil)</option>
+                <option value="bn">বাংলা (Bengali)</option>
+            </select>
         </div>
     </header>
 
@@ -1234,37 +1320,123 @@
             stream.appendChild(botRow);
             scrollToBottom(true);
 
-            // Animate phased status updates over the 10-second window
+            // 3. Connect to Backend Live Server-Sent Events (SSE) Stream
             const statusText = botRow.querySelector('#loading-status-text');
             const progressFill = botRow.querySelector('#loading-progress');
-            
-            let startTime = Date.now();
-            const progressInterval = setInterval(() => {
-                const elapsed = (Date.now() - startTime) / 1000;
-                const percent = Math.min((elapsed / 10.0) * 100, 95);
-                if (progressFill) progressFill.style.width = percent + '%';
-
-                if (elapsed >= 7.0 && statusText) {
-                    statusText.innerText = '✓ Preparing grounded response...';
-                } else if (elapsed >= 3.0 && statusText) {
-                    statusText.innerText = '📄 Checking official BIS documentation...';
-                } else if (statusText) {
-                    statusText.innerText = '🔎 Verifying BIS sources...';
-                }
-            }, 250);
 
             try {
-                const res = await fetch('/api/chat', {
+                let data = null;
+                const response = await fetch('/api/chat/stream', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ query: query })
                 });
-                const data = await res.json();
 
-                clearInterval(progressInterval);
+                if (response.ok && response.body) {
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder('utf-8');
+                    let buffer = '';
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n\n');
+                        buffer = lines.pop(); // keep last incomplete chunk
+
+                        for (const block of lines) {
+                            const trimmed = block.trim();
+                            if (trimmed.startsWith('data:')) {
+                                try {
+                                    const event = JSON.parse(trimmed.slice(5).trim());
+                                    if (event.message && statusText) {
+                                        statusText.innerText = event.message;
+                                    }
+                                    if (typeof event.percent === 'number' && progressFill) {
+                                        progressFill.style.width = Math.min(Math.max(event.percent, 5), 100) + '%';
+                                    }
+                                    if (event.stage === 'completed' && event.result) {
+                                        data = event.result;
+                                    }
+                                } catch (parseErr) {
+                                    console.warn('Error parsing SSE event:', parseErr);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Fallback to standard /api/chat if streaming was not available or didn't yield final data
+                if (!data) {
+                    const fallbackRes = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query: query })
+                    });
+                    data = await fallbackRes.json();
+                }
+
                 if (progressFill) progressFill.style.width = '100%';
 
                 const parsedHtml = marked.parse(data.response || 'No response generated.');
+
+                // Render interactive Verified BIS Provenance & Citations Tray
+                let citationsHtml = '';
+                if (data.citations && Array.isArray(data.citations) && data.citations.length > 0) {
+                    const chipItems = data.citations.map(c => {
+                        let rawUrl = (typeof c === 'string') ? c : (c.url || '#');
+                        let url = rawUrl;
+                        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                            const isMatch = url.match(/(?:IS[\s:\-_]*)?(\d{2,6})/i);
+                            if (isMatch) {
+                                url = `https://standardsbis.bsbedge.com/IS_${isMatch[1]}.aspx`;
+                            } else {
+                                url = 'https://standardsbis.bsbedge.com/';
+                            }
+                        }
+                        const label = (typeof c === 'string') ? (c.length > 40 ? c.substring(0, 37) + '...' : c) : (c.label || c.display_title || 'BIS Source');
+                        const badge = (typeof c === 'object' && c.badge) ? c.badge : '[Official Source]';
+                        const pageText = (typeof c === 'object' && c.page) ? ` (Page ${c.page})` : '';
+                        return `
+                            <a href="${url}" target="_blank" rel="noopener noreferrer" class="citation-chip" title="${label}">
+                                <span class="chip-badge">${badge}</span>
+                                <span class="chip-title">${label}${pageText}</span>
+                                <svg class="chip-external-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                                    <polyline points="15 3 21 3 21 9"></polyline>
+                                    <line x1="10" y1="14" x2="21" y2="3"></line>
+                                </svg>
+                            </a>
+                        `;
+                    }).join('');
+
+                    citationsHtml = `
+                        <div class="citation-tray">
+                            <div class="citation-tray-header">
+                                <div class="citation-tray-title">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                                    </svg>
+                                    <span>Verified BIS Provenance & Citations (${data.citations.length})</span>
+                                </div>
+                            </div>
+                            <div class="citation-chips-container">
+                                ${chipItems}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                const logId = data.log_id || 1;
+                const feedbackHtml = `
+                    <div class="feedback-action-bar" style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border-light); font-size: 12px; color: var(--text-muted);">
+                        <span>Was this helpful?</span>
+                        <button class="feedback-btn" onclick="submitFeedback(${logId}, 1, this)" style="background: #ffffff; border: 1px solid var(--border-light); border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; display: inline-flex; align-items: center; gap: 4px;">👍 Yes</button>
+                        <button class="feedback-btn" onclick="submitFeedback(${logId}, -1, this)" style="background: #ffffff; border: 1px solid var(--border-light); border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; display: inline-flex; align-items: center; gap: 4px;">👎 No</button>
+                    </div>
+                `;
 
                 botRow.querySelector('.assistant-card').innerHTML = `
                     <div class="card-header-bar">
@@ -1281,6 +1453,8 @@
                         </div>
                     </div>
                     <div class="markdown-body">${parsedHtml}</div>
+                    ${citationsHtml}
+                    ${feedbackHtml}
                 `;
 
                 // Enhance all source links inside the response to open in a new tab securely
@@ -1292,7 +1466,7 @@
                 scrollToBottom(true);
 
             } catch (err) {
-                clearInterval(progressInterval);
+                console.error('Chat submission error:', err);
                 botRow.querySelector('.assistant-card').innerHTML = `
                     <div class="card-header-bar">
                         <div class="card-header-left">
@@ -1303,11 +1477,11 @@
                         Unable to connect to the BIS AI Compliance Server. Please verify the backend service is running.
                     </div>
                 `;
+            } finally {
+                submitBtn.disabled = false;
+                input.focus();
                 scrollToBottom(true);
             }
-
-            submitBtn.disabled = false;
-            scrollToBottom(true);
         }
 
         // Helper to escape raw HTML in user inputs
@@ -1361,16 +1535,47 @@
         // Scheme Walkthrough Tab
         async function loadScheme(schemeKey) {
             const container = document.getElementById('scheme-content');
+            if (!container) return;
             container.style.display = 'block';
-            container.innerHTML = '<div style="color: var(--text-secondary);">Loading statutory fee schedule and procedure...</div>';
+            container.innerHTML = '<div style="color: var(--text-secondary);">Loading scheme details and statutory fee schedules...</div>';
 
             try {
                 const res = await fetch(`/api/schemes?scheme=${encodeURIComponent(schemeKey)}`);
                 const data = await res.json();
-                container.innerHTML = marked.parse(data.formatted_text);
-                container.querySelectorAll('a').forEach(a => { a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener noreferrer'); });
+                const contentText = data.formatted_text || data.text || 'No details available for this scheme.';
+                container.innerHTML = marked.parse(contentText);
+                container.querySelectorAll('a').forEach(a => {
+                    a.setAttribute('target', '_blank');
+                    a.setAttribute('rel', 'noopener noreferrer');
+                });
             } catch (err) {
-                container.innerHTML = '<div style="color: #b91c1c;">Failed to load scheme walkthrough.</div>';
+                console.error('Failed to load scheme walkthrough:', err);
+                container.innerHTML = '<div style="color: #b91c1c;">Failed to load scheme walkthrough. Please verify the backend server is running.</div>';
+            }
+        }
+
+        // User Feedback Handler
+        async function submitFeedback(logId, rating, btn) {
+            try {
+                const parent = btn.parentElement;
+                btn.disabled = true;
+                const res = await fetch('/api/feedback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        log_id: logId,
+                        query: 'chat_response',
+                        rating: rating,
+                        notes: rating > 0 ? 'Helpful' : 'Needs improvement'
+                    })
+                });
+                if (res.ok) {
+                    parent.innerHTML = '<span style="color: var(--green-badge); font-weight: 500;">✓ Thank you for your feedback!</span>';
+                } else {
+                    parent.innerHTML = '<span style="color: var(--text-muted);">Feedback recorded.</span>';
+                }
+            } catch (err) {
+                console.error('Failed to submit feedback:', err);
             }
         }
     </script>

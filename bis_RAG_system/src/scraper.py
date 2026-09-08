@@ -53,14 +53,20 @@ class ScrapedItem:
     extra_metadata: dict
 
 
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
 class BISScraper:
-    def __init__(self, out_dir: str):
+    def __init__(self, out_dir: str, max_workers: int = 4):
         self.out_dir = Path(out_dir)
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
         self.manifest_path = self.out_dir / "manifest.jsonl"
         self.warning_log_path = Path("warning_downloads.txt")
+        self.max_workers = max_workers
+        self._lock = threading.Lock()
 
     def _hash(self, content: bytes) -> str:
         return hashlib.sha256(content).hexdigest()
@@ -71,12 +77,14 @@ class BISScraper:
         return path
 
     def _record(self, item: ScrapedItem):
-        with open(self.manifest_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(asdict(item)) + "\n")
+        with self._lock:
+            with open(self.manifest_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(asdict(item)) + "\n")
 
     def _record_warning(self, url: str, reason: str):
-        with open(self.warning_log_path, "a", encoding="utf-8") as f:
-            f.write(f"- {url} (Reason: {reason})\n")
+        with self._lock:
+            with open(self.warning_log_path, "a", encoding="utf-8") as f:
+                f.write(f"- {url} (Reason: {reason})\n")
 
     def fetch_page(self, url: str) -> BeautifulSoup | None:
         try:
@@ -89,10 +97,31 @@ class BISScraper:
             self._record_warning(url, str(e))
             return None
 
+    def _download_single_pdf(self, link: str, listing_url: str, category: str):
+        try:
+            resp = self.session.get(link, timeout=30)
+            resp.raise_for_status()
+            content_hash = self._hash(resp.content)
+            filename = f"{content_hash[:12]}_{Path(urlparse(link).path).name}"
+            self._save(resp.content, filename)
+            self._record(ScrapedItem(
+                source_url=link,
+                local_path=str(self.out_dir / filename),
+                content_type="pdf",
+                category=category,
+                fetched_at=datetime.now(timezone.utc).isoformat(),
+                content_hash=content_hash,
+                extra_metadata={"listing_page": listing_url},
+            ))
+            log.info(f"Downloaded PDF: {link} -> {filename}")
+        except requests.RequestException as e:
+            log.warning(f"Skipping {link}: {e}")
+            self._record_warning(link, str(e))
+
     def scrape_pdf_links(self, listing_url: str, category: str):
         """
         Generic pattern: a listing page (e.g. 'List of Indian Standards')
-        contains <a href="*.pdf"> links. Download each, hash it, record metadata.
+        contains <a href="*.pdf"> links. Downloads concurrently across worker pool.
         """
         soup = self.fetch_page(listing_url)
         if soup is None:
@@ -105,29 +134,13 @@ class BISScraper:
         ]
         log.info(f"Found {len(pdf_links)} PDF links on {listing_url}")
 
-        for link in pdf_links:
-            try:
-                resp = self.session.get(link, timeout=30)
-                resp.raise_for_status()
-            except requests.RequestException as e:
-                log.warning(f"Skipping {link}: {e}")
-                self._record_warning(link, str(e))
-                continue
+        if not pdf_links:
+            return
 
-            content_hash = self._hash(resp.content)
-            filename = f"{content_hash[:12]}_{Path(urlparse(link).path).name}"
-            self._save(resp.content, filename)
-
-            self._record(ScrapedItem(
-                source_url=link,
-                local_path=str(self.out_dir / filename),
-                content_type="pdf",
-                category=category,
-                fetched_at=datetime.now(timezone.utc).isoformat(),
-                content_hash=content_hash,
-                extra_metadata={"listing_page": listing_url},
-            ))
-            time.sleep(REQUEST_DELAY_SECONDS)
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = [executor.submit(self._download_single_pdf, link, listing_url, category) for link in pdf_links]
+            for _ in as_completed(futures):
+                pass
 
     def scrape_direct_pdf(self, pdf_url: str, category: str):
         """

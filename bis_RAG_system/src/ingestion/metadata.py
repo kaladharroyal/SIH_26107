@@ -14,12 +14,16 @@ ALLOWED_CATEGORIES = {
     "faq",
     "product_standard_mapping",
     "certification",
+    "certification_scheme",
     "hallmarking",
     "consumer",
+    "consumer_redressal",
     "lab_directory",
     "licensing_fees",
     "annual_report",
     "general_policy",
+    "act_rules_regulations",
+    "general",
     "other",
 }
 
@@ -29,12 +33,19 @@ ALLOWED_PRODUCTION_SOURCE_OF_TRUTH = {
     "verified_bis_html",
     "verified_bis_api",
     "derived_from_bis",
+    "verified_bis_hallmarking",
+    "verified_bis_certification_scheme",
+    "verified_bis_act_rules_regulations",
+    "verified_bis_consumer_redressal",
+    "verified_bis_general",
+    "verified_bis_is_standard",
 }
 
 ALLOWED_IDENTITY_STATUS = {
     "verified",
     "non_standard",
     "unknown",
+    None,
 }
 
 

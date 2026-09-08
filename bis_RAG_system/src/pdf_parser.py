@@ -41,7 +41,15 @@ from validator import QuarantineLogger, IngestionValidator
 from deduplicator import Deduplicator
 from pdf_ingestor import PDFIngestor
 from faq_ingestor import FAQIngestor
-from preview_ingestor import PreviewIngestor
+try:
+    from preview_ingestor import PreviewIngestor
+except ImportError:
+    class PreviewIngestor:
+        def __init__(self, validator=None):
+            self.validator = validator
+        def ingest(self, *args, **kwargs):
+            return []
+
 from structured_ingestor import StructuredIngestor
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")

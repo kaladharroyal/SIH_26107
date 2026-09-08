@@ -15,7 +15,7 @@ for path in [SRC_DIR, TESTS_DIR, BASE_DIR]:
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from tests.test_phase5 import MultilingualBISPipelne
+from rag_pipeline import BISRAGPipeline
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("stress_test")
@@ -57,7 +57,7 @@ def run_stress_testing():
     print("         PHASE 7: EDGE CASE & HINGLISH STRESS TESTING SUITE")
     print("=" * 70 + "\n")
 
-    pipeline = MultilingualBISPipelne()
+    pipeline = BISRAGPipeline(llm_provider="mock", use_fast_retrieval=False)
     passed = 0
     total = len(STRESS_TEST_CASES)
 
@@ -67,8 +67,8 @@ def run_stress_testing():
         print(f"> STRESS TEST #{idx} [{cat}]")
         print(f"  Input: '{q}'")
 
-        res = pipeline.process_multilingual_query(q)
-        resp_text = res["response"]
+        res = pipeline.query(q)
+        resp_text = str(res.get("response", ""))
 
         test_passed = False
         if "expected_is" in test and test["expected_is"] in resp_text:
@@ -82,13 +82,13 @@ def run_stress_testing():
             passed += 1
             print(f"  Result: [PASS] (Verified Expected Anchor)\n")
         else:
-            print(f"  Result: [HANDLED] (Fallback / Routed correctly)\n")
-            passed += 1
+            print(f"  Result: [FAIL] (Expected anchor not matched in response)\n")
 
     pass_rate = (passed / total) * 100
     print("=" * 70)
     print(f"STRESS TEST SUMMARY: {passed}/{total} Tests Passed ({pass_rate:.2f}% Resilience)")
     print("=" * 70 + "\n")
+    return passed == total
 
 
 if __name__ == "__main__":

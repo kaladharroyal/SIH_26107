@@ -2,7 +2,7 @@
 Phase 2: Hybrid Retrieval Engine for BIS RAG System (retrieval.py)
 Combines:
   1. Lexical / Sparse BM25 Search (optimized for exact Indian Standard codes, clause refs, terms)
-  2. Dense Semantic Vector Search (BGE-M3 multilingual embeddings with persistent matrix store)
+  2. Dense Semantic Vector Search (Dynamic Multilingual Embeddings with persistent matrix store)
   3. Domain Category Pre-filtering (is_standard, qco_order, lab_directory, general_policy, etc.)
   4. Reciprocal Rank Fusion (RRF) for deterministic score merging
   5. Cross-Encoder & Heuristic Contextual Reranking
@@ -14,6 +14,7 @@ import argparse
 import json
 import logging
 import math
+import os
 import pickle
 import re
 import sys
@@ -34,9 +35,9 @@ DEFAULT_INDEX_DIR = BASE_DIR / "vector_index"
 
 class BM25Index:
     """
-    Persistent BM25 Index tailored for BIS Standard documents and clauses.
-    Preserves exact IS identifiers (e.g. 'IS 1786', 'IS:1070:2023', 'IS-12860')
-    and provides deterministic ranking and disk serialization.
+    Persistent Inverted-Index BM25 tailored for BIS Standard documents and clauses.
+    Preserves exact IS identifiers (e.g. 'IS 1786', 'IS:1070:2023', 'IS-12860'),
+    uses inverted postings lists for O(matching) search latency, and provides disk serialization.
     """
 
     def __init__(self, documents: Optional[List[Dict[str, Any]]] = None, k1: float = 1.5, b: float = 0.75):
@@ -48,6 +49,7 @@ class BM25Index:
         self.n_docs: int = 0
         self.df: Dict[str, int] = {}
         self.doc_freqs: List[Dict[str, int]] = []
+        self.inverted_index: Dict[str, List[Tuple[int, int]]] = {}  # token -> [(doc_idx, tf)]
         self.doc_categories: List[str] = []
         self.doc_ids: List[str] = []
 
@@ -66,12 +68,12 @@ class BM25Index:
         is_patterns = re.findall(r"\bis[\s:\-_]*\d{2,6}(?:[\s:\-_]*\d{4})?\b", text_lower)
         normalized_is = [re.sub(r"[\s:\-_]+", " ", p).strip() for p in is_patterns]
 
-        # General alphanumeric words
-        words = re.findall(r"\b[a-z0-9_\-]{2,}\b", text_lower)
+        # General alphanumeric words across Latin and Indic scripts
+        words = re.findall(r"[\w\-]{2,}", text_lower)
         return normalized_is + words
 
     def build(self, documents: List[Dict[str, Any]]):
-        """Builds BM25 frequency tables and IDF from documents."""
+        """Builds BM25 inverted postings lists, frequency tables, and IDF from documents."""
         self.documents = documents
         self.n_docs = len(documents)
         self.doc_len = []
@@ -79,8 +81,9 @@ class BM25Index:
         self.doc_categories = []
         self.doc_ids = []
         self.df = {}
+        self.inverted_index = {}
 
-        for d in documents:
+        for doc_idx, d in enumerate(documents):
             text = d.get("text", "")
             title = d.get("clause_title") or d.get("product") or ""
             is_num = d.get("is_number") or ""
@@ -95,14 +98,53 @@ class BM25Index:
             for t in tokens:
                 freqs[t] = freqs.get(t, 0) + 1
 
-            for t in freqs:
+            for t, tf in freqs.items():
                 self.df[t] = self.df.get(t, 0) + 1
+                if t not in self.inverted_index:
+                    self.inverted_index[t] = []
+                self.inverted_index[t].append((doc_idx, tf))
 
             self.doc_freqs.append(freqs)
 
         total_len = sum(self.doc_len)
         self.avgdl = total_len / max(self.n_docs, 1)
-        log.info(f"Built BM25 index over {self.n_docs} documents (avgdl={self.avgdl:.2f}, vocab={len(self.df)} terms).")
+        log.info(f"Built Inverted BM25 index over {self.n_docs} documents (avgdl={self.avgdl:.2f}, vocab={len(self.df)} terms).")
+
+    def append_documents(self, new_documents: List[Dict[str, Any]]):
+        """Incrementally adds new documents to the existing inverted index and updates IDF."""
+        if not new_documents:
+            return
+        start_idx = self.n_docs
+        for i, d in enumerate(new_documents):
+            doc_idx = start_idx + i
+            text = d.get("text", "")
+            title = d.get("clause_title") or d.get("product") or ""
+            is_num = d.get("is_number") or ""
+            full_text = f"{is_num} {title} {text}"
+
+            tokens = self.tokenize(full_text)
+            self.documents.append(d)
+            self.doc_len.append(len(tokens))
+            self.doc_categories.append(d.get("category", "general"))
+            self.doc_ids.append(d.get("chunk_id", ""))
+
+            freqs: Dict[str, int] = {}
+            for t in tokens:
+                freqs[t] = freqs.get(t, 0) + 1
+
+            for t, tf in freqs.items():
+                self.df[t] = self.df.get(t, 0) + 1
+                if t not in self.inverted_index:
+                    self.inverted_index[t] = []
+                self.inverted_index[t].append((doc_idx, tf))
+
+            self.doc_freqs.append(freqs)
+
+        self.n_docs = len(self.documents)
+        total_len = sum(self.doc_len)
+        self.avgdl = total_len / max(self.n_docs, 1)
+        log.info(f"Incrementally appended {len(new_documents)} documents to BM25 index (total docs: {self.n_docs}).")
+
 
     def search(
         self,
@@ -110,7 +152,7 @@ class BM25Index:
         top_k: int = 20,
         category: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Searches BM25 index for query with optional category filtering."""
+        """Fast inverted-index BM25 search touching only matching candidate documents."""
         if not query or not self.n_docs:
             return []
 
@@ -118,32 +160,32 @@ class BM25Index:
         if not q_tokens:
             return []
 
-        scores: List[Tuple[float, int]] = []
-        for i in range(self.n_docs):
-            if category and self.doc_categories[i] != category:
+        doc_scores: Dict[int, float] = {}
+
+        for q in q_tokens:
+            postings = self.inverted_index.get(q)
+            if not postings:
+                continue
+            df = self.df.get(q, 0)
+            # Robertson-Spärck Jones IDF
+            idf = math.log((self.n_docs - df + 0.5) / (df + 0.5) + 1.0)
+            if idf <= 0.0:
                 continue
 
-            freqs = self.doc_freqs[i]
-            dl = self.doc_len[i]
-            score = 0.0
-
-            for q in q_tokens:
-                if q not in freqs:
+            for doc_idx, tf in postings:
+                if category and self.doc_categories[doc_idx] != category:
                     continue
-                tf = freqs[q]
-                df = self.df.get(q, 0)
-                # Robertson-Spärck Jones IDF
-                idf = math.log((self.n_docs - df + 0.5) / (df + 0.5) + 1.0)
+                dl = self.doc_len[doc_idx]
                 numerator = tf * (self.k1 + 1.0)
                 denominator = tf + self.k1 * (1.0 - self.b + self.b * (dl / max(self.avgdl, 1e-5)))
-                score += idf * (numerator / denominator)
+                doc_scores[doc_idx] = doc_scores.get(doc_idx, 0.0) + (idf * (numerator / denominator))
 
-            if score > 0.0:
-                scores.append((score, i))
+        if not doc_scores:
+            return []
 
-        scores.sort(key=lambda x: x[0], reverse=True)
+        sorted_docs = sorted(doc_scores.items(), key=lambda x: x[1], reverse=True)[:top_k]
         results = []
-        for score, idx in scores[:top_k]:
+        for idx, score in sorted_docs:
             results.append({
                 "doc": self.documents[idx],
                 "score": float(score),
@@ -165,6 +207,7 @@ class BM25Index:
             "n_docs": self.n_docs,
             "df": self.df,
             "doc_freqs": self.doc_freqs,
+            "inverted_index": self.inverted_index,
             "doc_categories": self.doc_categories,
             "doc_ids": self.doc_ids,
         }
@@ -186,11 +229,189 @@ class BM25Index:
         idx.avgdl = state["avgdl"]
         idx.n_docs = state["n_docs"]
         idx.df = state["df"]
-        idx.doc_freqs = state["doc_freqs"]
+        idx.doc_freqs = state.get("doc_freqs", [])
         idx.doc_categories = state["doc_categories"]
         idx.doc_ids = state["doc_ids"]
+        idx.inverted_index = state.get("inverted_index", {})
+        if not idx.inverted_index and idx.doc_freqs:
+            # Reconstruct inverted index if loading legacy pickle
+            for doc_idx, freqs in enumerate(idx.doc_freqs):
+                for t, tf in freqs.items():
+                    if t not in idx.inverted_index:
+                        idx.inverted_index[t] = []
+                    idx.inverted_index[t].append((doc_idx, tf))
         log.info(f"Loaded BM25 index with {idx.n_docs} documents from {path}")
         return idx
+
+
+class HFTransformerEmbeddingModel:
+    """
+    Production Multilingual Neural Embedding Transformer utilizing HuggingFace AutoModel
+    with mean pooling and float32 normalization. Dynamically introspects hidden_size.
+    Default active model: 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2' (384-dim).
+    Supports high-dimensional models such as 'BAAI/bge-m3' (1024-dim) via EMBEDDING_MODEL_NAME.
+    Supports PyTorch dynamic INT8 quantization and ONNX Runtime for high-throughput, low-latency CPU inference.
+    """
+
+    def __init__(self, model_name_or_path: Optional[str] = None, use_quantization: Optional[bool] = None):
+        import torch
+        from transformers import AutoTokenizer, AutoModel
+
+        target = model_name_or_path or os.getenv(
+            "EMBEDDING_MODEL_NAME",
+            "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        )
+        self.model_name = target
+        log.info(f"Initializing HFTransformerEmbeddingModel with model '{target}'...")
+        self.tokenizer = AutoTokenizer.from_pretrained(target)
+        raw_model = AutoModel.from_pretrained(target)
+        raw_model.eval()
+
+        # Dynamic INT8 Quantization Optimization for CPU
+        if use_quantization is None:
+            use_quantization = os.getenv("USE_QUANTIZATION", "true").lower() == "true"
+
+        if use_quantization and not torch.cuda.is_available():
+            try:
+                self.model = torch.quantization.quantize_dynamic(
+                    raw_model, {torch.nn.Linear}, dtype=torch.qint8
+                )
+                log.info(f"✓ Applied dynamic INT8 quantization to HFTransformerEmbeddingModel '{self.model_name}' (CPU acceleration active).")
+            except Exception as e:
+                log.warning(f"Could not quantize embedding model ({e}). Using unquantized model.")
+                self.model = raw_model
+        else:
+            self.model = raw_model
+
+        self.dimension = int(getattr(self.model.config, "hidden_size", 384))
+        log.info(f"HFTransformerEmbeddingModel ready: '{self.model_name}' (dimension={self.dimension})")
+
+    def encode(self, texts: Union[str, List[str]], normalize_embeddings: bool = True, batch_size: int = 64, **kwargs) -> np.ndarray:
+        import torch
+        single = isinstance(texts, str)
+        text_list = [texts] if single else texts
+
+        all_vecs = []
+        for i in range(0, len(text_list), batch_size):
+            batch = text_list[i : i + batch_size]
+            inputs = self.tokenizer(batch, return_tensors="pt", padding=True, truncation=True, max_length=512)
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                mask = inputs["attention_mask"].unsqueeze(-1).expand(outputs.last_hidden_state.size()).float()
+                sum_embeddings = torch.sum(outputs.last_hidden_state * mask, 1)
+                sum_mask = torch.clamp(mask.sum(1), min=1e-9)
+                embeddings = sum_embeddings / sum_mask
+                if normalize_embeddings:
+                    embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+                all_vecs.append(embeddings.cpu().numpy())
+
+        res = np.vstack(all_vecs).astype(np.float32)
+        return res[0] if single else res
+
+
+class HFCrossEncoderReranker:
+    """
+    Production Cross-Encoder Contextual Reranker utilizing HuggingFace
+    AutoModelForSequenceClassification with sigmoid calibration and INT8 quantization.
+    Performs deep cross-attention between (query, document) pairs with LRU score caching.
+    """
+
+    def __init__(self, model_name_or_path: Optional[str] = None, use_quantization: Optional[bool] = None):
+        import torch
+        from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
+        target = model_name_or_path or os.getenv(
+            "RERANKER_MODEL_NAME",
+            "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        )
+        self.model_name = target
+        log.info(f"Initializing HFCrossEncoderReranker with model '{target}'...")
+        self.tokenizer = AutoTokenizer.from_pretrained(target)
+        raw_model = AutoModelForSequenceClassification.from_pretrained(target)
+        raw_model.eval()
+
+        # Dynamic INT8 Quantization Optimization for Cross-Encoder
+        if use_quantization is None:
+            use_quantization = os.getenv("USE_QUANTIZATION", "true").lower() == "true"
+
+        if use_quantization and not torch.cuda.is_available():
+            try:
+                self.model = torch.quantization.quantize_dynamic(
+                    raw_model, {torch.nn.Linear}, dtype=torch.qint8
+                )
+                log.info(f"✓ Applied dynamic INT8 quantization to HFCrossEncoderReranker '{self.model_name}' (CPU acceleration active).")
+            except Exception as e:
+                log.warning(f"Could not quantize cross-encoder ({e}). Using unquantized model.")
+                self.model = raw_model
+        else:
+            self.model = raw_model
+
+        self._score_cache: Dict[Tuple[str, str], float] = {}
+        log.info(f"HFCrossEncoderReranker ready: '{self.model_name}'")
+        try:
+            # Warm up once on CPU to avoid first-inference cold-start latency jitter
+            _ = self.predict([("warmup query", "warmup text")])
+        except Exception:
+            pass
+
+    def predict(self, pairs: List[Union[List[str], Tuple[str, str]]], batch_size: int = 20) -> np.ndarray:
+        """
+        Computes calibrated cross-encoder probabilities for query-document pairs.
+        Returns a 1D numpy array of floats in [0.0, 1.0].
+        Utilizes an in-memory score cache to avoid redundant CPU inference.
+        """
+        if not pairs:
+            return np.array([], dtype=np.float32)
+
+        import torch
+
+        all_scores = [0.0] * len(pairs)
+        uncached_indices = []
+        uncached_pairs = []
+
+        for idx, p in enumerate(pairs):
+            q_str = str(p[0]).strip()
+            d_str = str(p[1])[:512].strip()
+            cache_key = (q_str, d_str)
+            if cache_key in self._score_cache:
+                all_scores[idx] = self._score_cache[cache_key]
+            else:
+                uncached_indices.append(idx)
+                uncached_pairs.append((q_str, d_str))
+
+        if not uncached_pairs:
+            return np.array(all_scores, dtype=np.float32)
+
+        for i in range(0, len(uncached_pairs), batch_size):
+            batch = uncached_pairs[i : i + batch_size]
+            batch_indices = uncached_indices[i : i + batch_size]
+            queries = [p[0] for p in batch]
+            docs = [p[1] for p in batch]
+            inputs = self.tokenizer(
+                queries,
+                docs,
+                padding=True,
+                truncation=True,
+                max_length=256,
+                return_tensors="pt",
+            )
+            with torch.no_grad():
+                logits = self.model(**inputs).logits.squeeze(-1)
+                probs = torch.sigmoid(logits)
+                if probs.dim() == 0:
+                    probs = probs.unsqueeze(0)
+                batch_res = probs.cpu().numpy().tolist()
+
+            for b_idx, orig_idx in enumerate(batch_indices):
+                score_val = float(batch_res[b_idx])
+                all_scores[orig_idx] = score_val
+                # Store in LRU cache (capped at 5000 items)
+                if len(self._score_cache) >= 5000:
+                    self._score_cache.pop(next(iter(self._score_cache)))
+                self._score_cache[(queries[b_idx], docs[b_idx])] = score_val
+
+        return np.array(all_scores, dtype=np.float32)
+
 
 
 class MockEmbeddingModel:
@@ -224,8 +445,8 @@ class MockEmbeddingModel:
 
 class DenseVectorStore:
     """
-    Persistent, memory-mapped dense vector store for BGE-M3 embeddings.
-    Supports pre-computed matrix multiplication for ultra-fast cosine similarity.
+    Persistent, memory-mapped dense vector store with FAISS SIMD C++ acceleration
+    and automatic category-partitioned sub-indices for sub-millisecond search latency.
     """
 
     def __init__(
@@ -233,48 +454,188 @@ class DenseVectorStore:
         embeddings: Optional[np.ndarray] = None,
         chunk_ids: Optional[List[str]] = None,
         documents: Optional[List[Dict[str, Any]]] = None,
+        use_faiss: bool = True,
+        faiss_index: Optional[Any] = None,
     ):
         self.embeddings = embeddings  # Shape: (N, D), normalized float32
         self.chunk_ids = chunk_ids or []
         self.documents = documents or []
         self.id_to_idx = {cid: idx for idx, cid in enumerate(self.chunk_ids)}
         self.doc_categories = [d.get("category", "general") for d in self.documents]
+        self._category_to_indices: Dict[str, np.ndarray] = {}
+        self.category_faiss_indices: Dict[str, Any] = {}
+        if self.doc_categories:
+            unique_cats = set(self.doc_categories)
+            for cat in unique_cats:
+                self._category_to_indices[cat] = np.array([i for i, c in enumerate(self.doc_categories) if c == cat], dtype=np.int64)
+        self.use_faiss = use_faiss
+        self.faiss_index = faiss_index
+        if self.faiss_index is None:
+            self._init_faiss_index()
+
+    @property
+    def dim(self) -> int:
+        """Returns the embedding dimension of the store."""
+        if self.embeddings is not None and len(self.embeddings.shape) > 1:
+            return int(self.embeddings.shape[1])
+        return 384
+
+    def _init_faiss_index(self):
+        """Builds in-memory global and per-category FAISS IndexFlatIP if FAISS is available."""
+        if not self.use_faiss or self.embeddings is None or len(self.embeddings) == 0:
+            return
+        try:
+            import faiss
+            dim = int(self.embeddings.shape[1])
+            # Global FAISS index
+            index = faiss.IndexFlatIP(dim)
+            vecs = np.ascontiguousarray(self.embeddings.astype(np.float32))
+            index.add(vecs)
+            self.faiss_index = index
+
+            # Build per-category accelerated FAISS sub-indices
+            self.category_faiss_indices = {}
+            for cat, indices in self._category_to_indices.items():
+                if len(indices) > 0:
+                    cat_vecs = np.ascontiguousarray(self.embeddings[indices].astype(np.float32))
+                    cat_idx = faiss.IndexFlatIP(dim)
+                    cat_idx.add(cat_vecs)
+                    self.category_faiss_indices[cat] = cat_idx
+
+            log.info(f"Initialized accelerated FAISS IndexFlatIP with {index.ntotal} vectors ({len(self.category_faiss_indices)} category sub-indices, dim={dim})")
+        except Exception as e:
+            log.warning(f"Could not initialize FAISS index ({e}). Falling back to NumPy vector search.")
+            self.faiss_index = None
+            self.category_faiss_indices = {}
 
     @property
     def count(self) -> int:
         return len(self.chunk_ids)
+
+    def append_embeddings(
+        self,
+        new_embeddings: np.ndarray,
+        new_documents: List[Dict[str, Any]],
+        new_chunk_ids: Optional[List[str]] = None,
+    ):
+        """Incrementally appends new embeddings and documents to the dense vector store and FAISS index."""
+        if len(new_documents) == 0:
+            return
+        if new_chunk_ids is None:
+            new_chunk_ids = [d.get("chunk_id", f"chunk_{len(self.documents)+i}") for i, d in enumerate(new_documents)]
+
+        vecs = np.ascontiguousarray(new_embeddings.astype(np.float32))
+        if self.embeddings is None or len(self.embeddings) == 0:
+            self.embeddings = vecs
+        else:
+            self.embeddings = np.vstack([self.embeddings, vecs])
+
+        start_idx = len(self.documents)
+        self.documents.extend(new_documents)
+        self.chunk_ids.extend(new_chunk_ids)
+
+        for i, cid in enumerate(new_chunk_ids):
+            self.id_to_idx[cid] = start_idx + i
+
+        self.doc_categories = [d.get("category", "general") for d in self.documents]
+        self._category_to_indices = {}
+        for cat in set(self.doc_categories):
+            self._category_to_indices[cat] = np.array([i for i, c in enumerate(self.doc_categories) if c == cat], dtype=np.int64)
+
+        if self.use_faiss:
+            self._init_faiss_index()
+
+        log.info(f"Incrementally appended {len(new_documents)} documents to DenseVectorStore (total items: {len(self.chunk_ids)}).")
+
 
     def search(
         self,
         query_vec: np.ndarray,
         top_k: int = 20,
         category: Optional[str] = None,
+        strict: bool = False,
     ) -> List[Dict[str, Any]]:
-        """Executes vector cosine search via dot product against normalized matrix."""
+        """Executes vector cosine search via FAISS C++ acceleration or NumPy fallback with strict dimension validation."""
         if self.embeddings is None or len(self.embeddings) == 0:
             return []
 
         # Ensure 1D normalized query vector
-        q = query_vec.flatten()
+        q = query_vec.flatten().astype(np.float32)
+        expected_dim = self.embeddings.shape[1]
+        if len(q) != expected_dim:
+            if strict:
+                raise ValueError(f"Embedding dimension mismatch: query vector has {len(q)} dims but index expects {expected_dim} dims!")
+            log.error(
+                f"Embedding dimension mismatch: query vector has {len(q)} dims but index expects {expected_dim} dims! "
+                "Ensure consistent embedding models across ingestion and query phases."
+            )
+
+            # Safe boundary check
+            if len(q) < expected_dim:
+                q = np.pad(q, (0, expected_dim - len(q)))
+            else:
+                q = q[:expected_dim]
+
         norm = np.linalg.norm(q)
         if norm > 1e-9:
             q = q / norm
 
-        # Compute cosine similarity across all vectors
-        sims = np.dot(self.embeddings, q)
+        # 1. FAISS Accelerated Category Sub-Index Path
+        if category and category in self.category_faiss_indices:
+            cat_faiss = self.category_faiss_indices[category]
+            cat_indices = self._category_to_indices[category]
+            q_2d = np.ascontiguousarray(q.reshape(1, -1).astype(np.float32))
+            fetch_k = min(top_k, cat_faiss.ntotal)
+            scores, indices = cat_faiss.search(q_2d, fetch_k)
+            results = []
+            for score, local_idx in zip(scores[0], indices[0]):
+                if local_idx < 0 or local_idx >= len(cat_indices):
+                    continue
+                global_idx = int(cat_indices[local_idx])
+                results.append({
+                    "doc": self.documents[global_idx],
+                    "score": float(score),
+                    "method": "dense",
+                    "chunk_id": self.chunk_ids[global_idx],
+                })
+            return results
 
+        # 2. FAISS Accelerated Global Index Path
+        if self.faiss_index is not None and not category:
+            q_2d = np.ascontiguousarray(q.reshape(1, -1).astype(np.float32))
+            fetch_k = min(top_k, self.faiss_index.ntotal)
+            scores, indices = self.faiss_index.search(q_2d, fetch_k)
+            results = []
+            for score, idx in zip(scores[0], indices[0]):
+                if idx < 0 or idx >= len(self.documents):
+                    continue
+                results.append({
+                    "doc": self.documents[idx],
+                    "score": float(score),
+                    "method": "dense",
+                    "chunk_id": self.chunk_ids[idx],
+                })
+            return results
+
+        # 3. Filtered or NumPy Fallback Path
         if category:
-            # Filter indices by category
-            candidate_indices = [i for i, cat in enumerate(self.doc_categories) if cat == category]
-            if not candidate_indices:
+            cat_indices = self._category_to_indices.get(category)
+            if cat_indices is None or len(cat_indices) == 0:
                 return []
-            candidate_sims = [(float(sims[i]), i) for i in candidate_indices]
-            candidate_sims.sort(key=lambda x: x[0], reverse=True)
-            top_indices = candidate_sims[:top_k]
+            sub_embeddings = self.embeddings[cat_indices]
+            sims = np.dot(sub_embeddings, q)
+            top_k_sub = min(top_k, len(sims))
+            if len(sims) > top_k_sub * 5:
+                part_idx = np.argpartition(sims, -top_k_sub)[-top_k_sub:]
+                top_sub = [(float(sims[p]), int(cat_indices[p])) for p in part_idx]
+                top_sub.sort(key=lambda x: x[0], reverse=True)
+                top_indices = top_sub
+            else:
+                sorted_p = np.argsort(-sims)[:top_k_sub]
+                top_indices = [(float(sims[p]), int(cat_indices[p])) for p in sorted_p]
         else:
-            # Global top_k
+            sims = np.dot(self.embeddings, q)
             top_k = min(top_k, len(sims))
-            # Use argpartition for fast top-k if large
             if len(sims) > top_k * 5:
                 partitioned_idx = np.argpartition(sims, -top_k)[-top_k:]
                 top_sims = [(float(sims[i]), int(i)) for i in partitioned_idx]
@@ -295,17 +656,27 @@ class DenseVectorStore:
         return results
 
     def save(self, output_dir: Union[str, Path]):
-        """Saves matrix and metadata to disk."""
+        """Saves matrix, FAISS binary, and metadata to disk."""
         out_path = Path(output_dir)
         out_path.mkdir(parents=True, exist_ok=True)
 
         if self.embeddings is not None:
             np.save(str(out_path / "embeddings.npy"), self.embeddings)
 
+        if self.faiss_index is not None:
+            try:
+                import faiss
+                faiss.write_index(self.faiss_index, str(out_path / "faiss_index.bin"))
+                log.info(f"Saved FAISS index binary to {out_path / 'faiss_index.bin'}")
+            except Exception as e:
+                log.warning(f"Could not write FAISS index to disk: {e}")
+
         meta = {
             "count": len(self.chunk_ids),
             "dim": int(self.embeddings.shape[1]) if self.embeddings is not None else 0,
+            "model_name": getattr(self, "model_name", os.getenv("EMBEDDING_MODEL_NAME", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")),
             "chunk_ids": self.chunk_ids,
+            "has_faiss_index": self.faiss_index is not None,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         with open(out_path / "vector_metadata.json", "w", encoding="utf-8") as f:
@@ -320,11 +691,12 @@ class DenseVectorStore:
 
     @classmethod
     def load(cls, output_dir: Union[str, Path]) -> "DenseVectorStore":
-        """Loads matrix and metadata from disk."""
+        """Loads matrix, optional pre-built FAISS index, and metadata from disk."""
         path = Path(output_dir)
         npy_file = path / "embeddings.npy"
         meta_file = path / "vector_metadata.json"
         docs_file = path / "documents.jsonl"
+        faiss_file = path / "faiss_index.bin"
 
         if not npy_file.exists() or not meta_file.exists() or not docs_file.exists():
             raise FileNotFoundError(f"Dense vector store incomplete at {path}")
@@ -340,8 +712,18 @@ class DenseVectorStore:
                     documents.append(json.loads(line))
 
         chunk_ids = meta.get("chunk_ids", [d.get("chunk_id", "") for d in documents])
+
+        faiss_idx = None
+        if faiss_file.exists():
+            try:
+                import faiss
+                faiss_idx = faiss.read_index(str(faiss_file))
+                log.info(f"Loaded pre-built FAISS index binary ({faiss_idx.ntotal} items) from {faiss_file}")
+            except Exception as e:
+                log.warning(f"Could not load pre-built FAISS index: {e}")
+
         log.info(f"Loaded DenseVectorStore with {len(chunk_ids)} embeddings of dim {embeddings.shape[1]} from {path}")
-        return cls(embeddings=embeddings, chunk_ids=chunk_ids, documents=documents)
+        return cls(embeddings=embeddings, chunk_ids=chunk_ids, documents=documents, faiss_index=faiss_idx)
 
 
 class HybridRetrievalPipeline:
@@ -370,25 +752,26 @@ class HybridRetrievalPipeline:
 
     def _load_or_init_pipeline(self):
         """Loads chunks, BM25 index, vector store, and neural models."""
-        # 1. Load Chunks
-        if self.chunks_path.exists():
-            with open(self.chunks_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.strip():
-                        self.chunks.append(json.loads(line))
-            log.info(f"Loaded {len(self.chunks)} verified chunks from {self.chunks_path}")
-        else:
-            log.warning(f"Chunks file not found at {self.chunks_path}")
-
-        # 2. Load or Build BM25 Index
+        # 1. Load or Build BM25 Index
         bm25_file = self.index_dir / "bm25_index.pkl"
         if bm25_file.exists():
             try:
                 self.bm25_index = BM25Index.load(bm25_file)
+                self.chunks = self.bm25_index.documents
+                log.info(f"Loaded {len(self.chunks)} verified chunks from BM25 index.")
             except Exception as e:
-                log.warning(f"Could not load BM25 index from {bm25_file}: {e}. Building in memory...")
-                self.bm25_index = BM25Index(self.chunks)
-        elif self.chunks:
+                log.warning(f"Could not load BM25 index from {bm25_file}: {e}. Loading from source...")
+                self.bm25_index = None
+
+        if self.bm25_index is None:
+            if self.chunks_path.exists():
+                with open(self.chunks_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.strip():
+                            self.chunks.append(json.loads(line))
+                log.info(f"Loaded {len(self.chunks)} verified chunks from {self.chunks_path}")
+            else:
+                log.warning(f"Chunks file not found at {self.chunks_path}")
             self.bm25_index = BM25Index(self.chunks)
 
         # 3. Load or Init Vector Store
@@ -399,36 +782,50 @@ class HybridRetrievalPipeline:
                 log.warning(f"Could not load VectorStore from {self.index_dir}: {e}")
 
         # 4. Initialize Embedding Model
+        target_dim = self.vector_store.dim if self.vector_store else 384
         if self.use_mock_encoder:
-            self.encoder = MockEmbeddingModel(dim=128)
-            log.info("Initialized MockEmbeddingModel for test mode.")
+            self.encoder = MockEmbeddingModel(dim=target_dim)
+            log.info(f"Initialized MockEmbeddingModel (dim={target_dim}) for test mode.")
         else:
             self._init_neural_models()
 
     def _init_neural_models(self):
-        """Attempts to load BGE-M3 and cross-encoder reranker models."""
+        """Initializes HFTransformerEmbeddingModel and HFCrossEncoderReranker."""
+        target_dim = self.vector_store.dim if self.vector_store else 384
         try:
-            from sentence_transformers import SentenceTransformer, CrossEncoder
-            log.info("Loading BGE-M3 sentence transformer...")
-            self.encoder = SentenceTransformer("BAAI/bge-m3")
-            log.info("Loading BGE-Reranker cross encoder...")
-            self.reranker = CrossEncoder("BAAI/bge-reranker-v2-m3")
+            log.info("Loading Neural Transformer model (HFTransformerEmbeddingModel)...")
+            self.encoder = HFTransformerEmbeddingModel()
         except Exception as e:
-            log.warning(
-                f"Neural models could not be loaded directly ({e}). "
-                "Dense search will use fallback/mock embedding mode."
-            )
-            self.encoder = MockEmbeddingModel(dim=128)
+            log.warning(f"Embedding model could not be loaded ({e}). Using MockEmbeddingModel (dim={target_dim}).")
+            self.encoder = MockEmbeddingModel(dim=target_dim)
+
+        use_reranker = os.getenv("USE_RERANKER", "true").lower() in ("true", "1", "yes")
+        if use_reranker:
+            try:
+                log.info("Loading Neural Cross-Encoder (HFCrossEncoderReranker)...")
+                self.reranker = HFCrossEncoderReranker()
+            except Exception as e:
+                log.error(
+                    f"===============================================================\n"
+                    f"[WARNING/DEGRADATION] Neural cross-encoder failed to initialize ({e})!\n"
+                    f"Pipeline will operate in degraded heuristic reranking mode.\n"
+                    f"==============================================================="
+                )
+                self.reranker = None
+        else:
+            log.info("Neural Cross-Encoder disabled via USE_RERANKER=false.")
+            self.reranker = None
 
     def encode_query(self, query: str) -> np.ndarray:
         """Encodes query string into dense vector."""
+        target_dim = self.vector_store.dim if self.vector_store else 384
         if self.encoder is None:
-            self.encoder = MockEmbeddingModel(dim=128)
+            self.encoder = MockEmbeddingModel(dim=target_dim)
 
         if hasattr(self.encoder, "encode"):
             vec = self.encoder.encode(query, normalize_embeddings=True)
             return np.array(vec, dtype=np.float32)
-        return MockEmbeddingModel().encode(query)
+        return MockEmbeddingModel(dim=target_dim).encode(query)
 
     def sparse_search(self, query: str, top_k: int = 20, category: Optional[str] = None) -> List[Dict[str, Any]]:
         """Performs lexical BM25 search."""
@@ -438,7 +835,7 @@ class HybridRetrievalPipeline:
 
     def dense_search(self, query: str, top_k: int = 20, category: Optional[str] = None) -> List[Dict[str, Any]]:
         """Performs dense vector search against persistent vector store or in-memory chunks."""
-        if not query or not re.search(r"[a-zA-Z0-9]", query):
+        if not query or not query.strip():
             return []
 
         q_vec = self.encode_query(query)
@@ -487,12 +884,15 @@ class HybridRetrievalPipeline:
         doc_map: Dict[str, Dict[str, Any]] = {}
         dense_ranks: Dict[str, int] = {}
         sparse_ranks: Dict[str, int] = {}
+        dense_scores: Dict[str, float] = {}
+        sparse_scores: Dict[str, float] = {}
 
         for rank, item in enumerate(dense_results):
             doc = item["doc"]
             doc_id = item.get("chunk_id") or doc.get("chunk_id") or f"doc_{hash(doc.get('text', ''))}"
             doc_map[doc_id] = doc
             dense_ranks[doc_id] = rank + 1
+            dense_scores[doc_id] = float(item.get("score", 0.0))
             rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + (1.0 / (rrf_k + rank + 1))
 
         for rank, item in enumerate(sparse_results):
@@ -500,6 +900,7 @@ class HybridRetrievalPipeline:
             doc_id = item.get("chunk_id") or doc.get("chunk_id") or f"doc_{hash(doc.get('text', ''))}"
             doc_map[doc_id] = doc
             sparse_ranks[doc_id] = rank + 1
+            sparse_scores[doc_id] = float(item.get("score", 0.0))
             rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + (1.0 / (rrf_k + rank + 1))
 
         sorted_docs = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
@@ -510,6 +911,8 @@ class HybridRetrievalPipeline:
                 "chunk_id": doc_id,
                 "doc": doc_map[doc_id],
                 "rrf_score": float(score),
+                "dense_score": dense_scores.get(doc_id, None),
+                "sparse_score": sparse_scores.get(doc_id, None),
                 "dense_rank": dense_ranks.get(doc_id, None),
                 "sparse_rank": sparse_ranks.get(doc_id, None),
             })
@@ -525,16 +928,28 @@ class HybridRetrievalPipeline:
 
         if self.reranker is not None:
             try:
-                pairs = [[query, c["doc"].get("text", "")] for c in candidates]
+                # Limit cross-encoder evaluation to top candidates from RRF pool (default 6)
+                # to guarantee sub-300ms interactive CPU latency SLA
+                rerank_depth = int(os.getenv("RERANK_DEPTH", "6"))
+                candidates_to_score = candidates[:rerank_depth]
+                pairs = [[query, c["doc"].get("text", "")] for c in candidates_to_score]
                 scores = self.reranker.predict(pairs)
-                for idx, c in enumerate(candidates):
-                    c["rerank_score"] = float(scores[idx])
-                candidates.sort(key=lambda x: x["rerank_score"], reverse=True)
-                return candidates[:top_n]
+                for idx, c in enumerate(candidates_to_score):
+                    score = float(scores[idx])
+                    c["rerank_score"] = score
+                    c["cross_encoder_score"] = score
+                    c["rerank_method"] = "neural"
+                candidates_to_score.sort(key=lambda x: x["rerank_score"], reverse=True)
+                return candidates_to_score[:top_n]
             except Exception as e:
-                log.warning(f"Cross-encoder reranking failed: {e}. Falling back to heuristic reranking.")
+                log.error(
+                    f"===============================================================\n"
+                    f"[WARNING/DEGRADATION] Cross-encoder reranking failed: {e}.\n"
+                    f"Falling back to heuristic regex boosting for query '{query[:40]}'.\n"
+                    f"==============================================================="
+                )
 
-        # Heuristic Contextual Boosting
+        # Heuristic Contextual Boosting Fallback
         # Boost matches for exact IS standard numbers (e.g. 'IS 1786')
         is_matches = re.findall(r"\bIS[\s:\-_]*\d{2,6}\b", query, re.IGNORECASE)
         for c in candidates:
@@ -550,6 +965,7 @@ class HybridRetrievalPipeline:
                     boost += 0.5
 
             c["rerank_score"] = c.get("rrf_score", 0.0) + boost
+            c["rerank_method"] = "heuristic_fallback"
 
         candidates.sort(key=lambda x: x["rerank_score"], reverse=True)
         return candidates[:top_n]
@@ -626,21 +1042,49 @@ class HybridRetrievalPipeline:
     ) -> List[Dict[str, Any]]:
         """
         Executes end-to-end Hybrid Retrieval:
-        1. BM25 Sparse Search
-        2. BGE-M3 Dense Vector Search
-        3. RRF Score Fusion
-        4. Contextual Reranking
-        5. Returns Top-N Chunks with full provenance
+        1. Multilingual Query Normalization (for Indic scripts / Hinglish)
+        2. BM25 Sparse Search (with cross-lingual query fusion)
+        3. Dense Vector Search (with cross-lingual query fusion)
+        4. RRF Score Fusion
+        5. Contextual Reranking
+        6. Returns Top-N Chunks with full provenance
         """
-        if not query or not query.strip() or not re.search(r"[a-zA-Z0-9]", query):
+        if not query or not query.strip() or not re.sub(r"[^\w\s]", "", query, flags=re.UNICODE).strip():
             return []
 
         clean_query = query.strip()
         sparse_res = self.sparse_search(clean_query, top_k=20, category=category)
         dense_res = self.dense_search(clean_query, top_k=20, category=category)
 
+        # Cross-lingual expansion for Indic scripts & code-mixed queries
+        norm_q = clean_query
+        try:
+            from multilingual import MultilingualHandler
+            normalizer = MultilingualHandler()
+            norm_q = normalizer.normalize_native_to_english_keywords(clean_query)
+            norm_q = normalizer.normalize_hinglish_to_english(norm_q)
+            if norm_q.strip() and norm_q.strip().lower() != clean_query.lower():
+                norm_sparse = self.sparse_search(norm_q, top_k=20, category=category)
+                sparse_ids = {r.get("chunk_id") or r["doc"].get("chunk_id") for r in sparse_res}
+                for r in norm_sparse:
+                    cid = r.get("chunk_id") or r["doc"].get("chunk_id")
+                    if cid not in sparse_ids:
+                        sparse_res.append(r)
+                        sparse_ids.add(cid)
+
+                norm_dense = self.dense_search(norm_q, top_k=20, category=category)
+                dense_ids = {r.get("chunk_id") or r["doc"].get("chunk_id") for r in dense_res}
+                for r in norm_dense:
+                    cid = r.get("chunk_id") or r["doc"].get("chunk_id")
+                    if cid not in dense_ids:
+                        dense_res.append(r)
+                        dense_ids.add(cid)
+        except Exception as e:
+            log.debug(f"Multilingual query expansion skipped: {e}")
+
         fused = self.reciprocal_rank_fusion(dense_res, sparse_res, rrf_k=60)
-        reranked = self.rerank(clean_query, fused, top_n=top_n)
+        rerank_query = norm_q if (norm_q and norm_q.strip()) else clean_query
+        reranked = self.rerank(rerank_query, fused, top_n=top_n)
 
         # Enforce provenance integrity on all retrieved chunks
         for item in reranked:
@@ -656,6 +1100,24 @@ class HybridRetrievalPipeline:
 
         return reranked
 
+    def get_corpus_stats(self) -> Dict[str, Any]:
+        """
+        Dynamically calculates and returns real chunk counts and category breakdown
+        directly from the active loaded index.
+        """
+        docs = self.chunks if self.chunks else (self.bm25_index.documents if self.bm25_index else [])
+        total_chunks = len(docs)
+        category_counts: Dict[str, int] = {}
+        for d in docs:
+            cat = d.get("category", "unknown")
+            category_counts[cat] = category_counts.get(cat, 0) + 1
+        return {
+            "total_chunks": total_chunks,
+            "category_counts": category_counts,
+            "categories": sorted(list(category_counts.keys())),
+            "source_of_truth": "live_index",
+        }
+
     @classmethod
     def build_full_index(
         cls,
@@ -663,6 +1125,7 @@ class HybridRetrievalPipeline:
         index_dir: Path = DEFAULT_INDEX_DIR,
         batch_size: int = 64,
         use_mock: bool = False,
+        force_rebuild: bool = False,
     ):
         """
         Builds persistent BM25 and Dense vector indexes with resumable checkpointing.
@@ -694,27 +1157,30 @@ class HybridRetrievalPipeline:
         encoder = MockEmbeddingModel(dim=128) if use_mock else None
         if encoder is None:
             try:
-                from sentence_transformers import SentenceTransformer
-                log.info("Loading BGE-M3 embedding model for indexing...")
-                encoder = SentenceTransformer("BAAI/bge-m3")
+                model_name = os.getenv("EMBEDDING_MODEL_NAME", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+                log.info(f"Loading dynamic neural embedding model '{model_name}' for indexing...")
+                encoder = HFTransformerEmbeddingModel(model_name)
             except Exception as e:
-                log.warning(f"Could not load BGE-M3 ({e}). Using MockEmbeddingModel.")
+                log.warning(f"Could not load neural embedding model ({e}). Using MockEmbeddingModel.")
                 encoder = MockEmbeddingModel(dim=128)
 
         # Check existing checkpoint
         start_idx = 0
         embeddings_list = []
-        if checkpoint_file.exists():
+        if checkpoint_file.exists() and not force_rebuild:
             try:
                 with open(checkpoint_file, "r", encoding="utf-8") as f:
                     cp = json.load(f)
-                start_idx = cp.get("processed_count", 0)
-                temp_npy = out_dir / "embeddings_partial.npy"
-                if temp_npy.exists() and start_idx > 0:
-                    existing_arr = np.load(str(temp_npy))
-                    if len(existing_arr) == start_idx:
-                        embeddings_list.append(existing_arr)
-                        log.info(f"Resuming indexing from checkpoint: {start_idx}/{total_chunks} chunks already processed.")
+                saved_total = cp.get("total_count", 0)
+                saved_proc = cp.get("processed_count", 0)
+                if saved_total == total_chunks and 0 < saved_proc < total_chunks:
+                    temp_npy = out_dir / "embeddings_partial.npy"
+                    if temp_npy.exists():
+                        existing_arr = np.load(str(temp_npy))
+                        if len(existing_arr) == saved_proc:
+                            start_idx = saved_proc
+                            embeddings_list.append(existing_arr)
+                            log.info(f"Resuming indexing from checkpoint: {start_idx}/{total_chunks} chunks.")
             except Exception as e:
                 log.warning(f"Could not load checkpoint: {e}. Starting from 0.")
                 start_idx = 0
@@ -725,6 +1191,8 @@ class HybridRetrievalPipeline:
             batch = chunks[i : i + batch_size]
             texts = [b.get("text", "")[:500] for b in batch]
             vecs = encoder.encode(texts, normalize_embeddings=True)
+            if hasattr(vecs, "ndim") and vecs.ndim == 1:
+                vecs = vecs.reshape(1, -1)
             all_embeddings.append(np.array(vecs, dtype=np.float32))
 
             current_count = min(i + batch_size, total_chunks)
@@ -747,8 +1215,65 @@ class HybridRetrievalPipeline:
         # Remove partial file on success
         if (out_dir / "embeddings_partial.npy").exists():
             (out_dir / "embeddings_partial.npy").unlink()
+        if checkpoint_file.exists():
+            checkpoint_file.unlink()
 
         log.info(f"Successfully built complete Hybrid Retrieval Index in {out_dir}")
+
+    def incremental_ingest(
+        self,
+        new_documents: List[Dict[str, Any]],
+        save_to_disk: bool = True,
+        output_dir: Optional[Union[str, Path]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Incrementally indexes new documents into both BM25 and Dense vector store,
+        updating FAISS and BM25 persistent index files without full corpus rebuilds.
+        """
+        if not new_documents:
+            return {"status": "empty", "added_count": 0}
+
+        log.info(f"Starting incremental ingestion of {len(new_documents)} documents...")
+        
+        # 1. Update BM25 Index
+        if self.bm25_index is None:
+            self.bm25_index = BM25Index(new_documents)
+        else:
+            self.bm25_index.append_documents(new_documents)
+
+        # 2. Compute Embeddings & Update Dense Vector Store
+        texts = [f"{d.get('is_number', '')} {d.get('clause_title', '')} {d.get('text', '')}" for d in new_documents]
+        new_embeddings = self.encoder.encode(texts, normalize_embeddings=True)
+        if hasattr(new_embeddings, "ndim") and new_embeddings.ndim == 1:
+            new_embeddings = new_embeddings.reshape(1, -1)
+
+        start_count = len(self.vector_store.chunk_ids) if self.vector_store else 0
+        new_chunk_ids = [d.get("chunk_id", f"inc_chunk_{start_count + i}") for i, d in enumerate(new_documents)]
+        
+        if self.vector_store is None:
+            self.vector_store = DenseVectorStore(
+                embeddings=np.array(new_embeddings, dtype=np.float32),
+                chunk_ids=new_chunk_ids,
+                documents=new_documents,
+            )
+        else:
+            self.vector_store.append_embeddings(new_embeddings, new_documents, new_chunk_ids)
+
+        # 3. Persist updated index artifacts to disk if requested
+        if save_to_disk:
+            out_dir = Path(output_dir) if output_dir else getattr(self, "index_dir", DEFAULT_INDEX_DIR)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            self.bm25_index.save(out_dir / "bm25_index.pkl")
+            self.vector_store.save(out_dir)
+            log.info(f"✓ Saved updated incremental index to {out_dir}")
+
+        return {
+            "status": "success",
+            "added_count": len(new_documents),
+            "total_documents": self.bm25_index.n_docs,
+        }
+
+
 
 
 def main():

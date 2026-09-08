@@ -18,7 +18,7 @@ for path in [SRC_DIR, TESTS_DIR, BASE_DIR]:
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from tests.test_phase5 import MultilingualBISPipelne
+from rag_pipeline import BISRAGPipeline
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("eval_personas")
@@ -65,7 +65,7 @@ def run_persona_evaluation():
     print("      PHASE 7: PERSONA ACCURACY & CITATION VERIFICATION SUITE")
     print("=" * 70 + "\n")
 
-    pipeline = MultilingualBISPipelne()
+    pipeline = BISRAGPipeline(llm_provider="mock", use_fast_retrieval=False)
     retrieval_hits = 0
     citation_hits = 0
     total = len(PERSONA_TEST_DATA)
@@ -76,15 +76,15 @@ def run_persona_evaluation():
         expected_kw = test["expected_keyword"].lower()
         expected_flow = test["expected_subflow"]
 
-        print(f"▶ TEST #{idx} [{persona}]")
+        print(f"> TEST #{idx} [{persona}]")
         print(f"  Query: '{q}'")
 
-        res = pipeline.process_multilingual_query(q)
-        flow = res["sub_flow"]
-        resp_text = res["response"].lower()
+        res = pipeline.query(q)
+        flow = str(res.get("flow_used") or res.get("intent", ""))
+        resp_text = str(res.get("response", "")).lower()
 
         # Measure Sub-flow Retrieval Precision
-        flow_pass = (flow == expected_kw or flow == expected_flow)
+        flow_pass = (flow == expected_kw or flow == expected_flow or res.get("intent") == expected_flow)
         if flow_pass or expected_kw in resp_text:
             retrieval_hits += 1
 
@@ -96,9 +96,9 @@ def run_persona_evaluation():
             cit_pass = False
 
         print(f"  Routed Sub-Flow: {flow.upper()}")
-        print(f"  Retrieval Match: {'✅ PASS' if flow_pass else '❌ CHECK'}")
-        print(f"  Citation Accuracy: {'✅ PASS' if cit_pass else '❌ CHECK'}")
-        print(f"  Snippet: {res['response'][:130]}...\n")
+        print(f"  Retrieval Match: {'[PASS]' if flow_pass else '[CHECK]'}")
+        print(f"  Citation Accuracy: {'[PASS]' if cit_pass else '[CHECK]'}")
+        print(f"  Snippet: {str(res.get('response', ''))[:130]}...\n")
 
     retrieval_acc = (retrieval_hits / total) * 100
     citation_acc = (citation_hits / total) * 100
@@ -110,6 +110,7 @@ def run_persona_evaluation():
     print(f"Retrieval Accuracy Precision : {retrieval_acc:.2f}% ({retrieval_hits}/{total})")
     print(f"Citation Accuracy Precision  : {citation_acc:.2f}% ({citation_hits}/{total})")
     print("=" * 70 + "\n")
+    return retrieval_hits == total and citation_hits == total
 
 
 if __name__ == "__main__":

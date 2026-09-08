@@ -1,0 +1,326 @@
+{
+  "version": "2026.1",
+  "source_description": "Bureau of Indian Standards (Conformity Assessment) Regulations and Official Fee Schedules",
+  "schemes": [
+    {
+      "scheme_key": "scheme_i",
+      "title": "Product Certification Scheme (Scheme-I / ISI Mark)",
+      "full_name": "Scheme-I: Standard Mark (ISI) Conformity Assessment Scheme for Domestic Manufacturers",
+      "governing_regulation": "BIS (Conformity Assessment) Regulations, 2018 - Scheme I",
+      "target_audience": "Domestic Manufacturers in India producing goods covered under Indian Standards",
+      "applicable_scope": "Industrial, engineering, consumer, electrical, chemical, and building materials requiring ISI mark certification.",
+      "fee_schedule": {
+        "application_fee": "₹1,000",
+        "inspection_charge": "₹7,000 per man-day + actual travel and lodging expenses",
+        "test_report_validity": "90 Days from recognized lab",
+        "license_duration": "2 Years (Renewable)",
+        "minimum_marking_fee": "Varies by product category (Typically ₹25,000 to ₹1,00,000 per annum)",
+        "concessions": "80% concession on application and minimum marking fees for Micro Enterprises (valid for 3 years); 50% concession for Startups and Women Entrepreneurs."
+      },
+      "steps": [
+        "1. **Online Application**: Register on the `manakonline.in` portal and submit Form-V along with manufacturing process details.",
+        "2. **Document Upload**: Upload Factory Registration Certificate, Machinery List, Testing Equipment calibration records, and Quality Manual.",
+        "3. **Application Fee Payment**: Pay the non-refundable application fee of **₹1,000** online.",
+        "4. **Factory Inspection**: BIS Inspecting Officer conducts on-site factory verification (Fee: **₹7,000/man-day**), inspects testing facilities, and draws sealed samples.",
+        "5. **Sample Testing**: Factory samples are tested at a BIS Recognized Laboratory for full standard compliance.",
+        "6. **Grant of Licence**: Upon successful verification, BIS issues the Performance Licence granting permission to apply the ISI Mark."
+      ],
+      "required_documents": [
+        "Factory Registration Certificate / MSME Udyam Registration",
+        "Manufacturing Machinery list with capacity and power details",
+        "In-house testing equipment list with valid calibration certificates",
+        "Plant layout and manufacturing process flow chart",
+        "Quality Control Manual and appointment of qualified QC personnel",
+        "Consent letter from BIS recognized lab if external testing is required"
+      ],
+      "timelines": {
+        "normal_procedure": "45 to 60 days from complete application submission",
+        "simplified_procedure": "30 days for products eligible under simplified scheme",
+        "licence_validity": "2 Years initially, renewable for 1 to 5 years"
+      },
+      "official_url": "https://www.bis.gov.in/product-certification/product-certification-overview/?lang=en",
+      "provenance": {
+        "regulation": "BIS (Conformity Assessment) Regulations 2018 - Scheme-I",
+        "gazette_id": "CG-DL-E-04062018-198754",
+        "source_url": "https://www.bis.gov.in/product-certification/product-certification-overview/?lang=en",
+        "source_file": "raw_data/pdfs/0c5e8e3445b4_GrantofLicence-Guidelines-25Feb2026.pdf",
+        "source_hash": "0c5e8e3445b46fbd58973c266a1db355a08c5ebc6c926bb763ae57ea44cb64df"
+      }
+    },
+    {
+      "scheme_key": "scheme_ii",
+      "title": "Compulsory Registration Scheme (Scheme-II / CRS)",
+      "full_name": "Scheme-II: Self-Declaration of Conformity (CRS) for Electronic & IT Goods",
+      "governing_regulation": "BIS (Conformity Assessment) Regulations, 2018 - Scheme II & MeitY/MHI Orders",
+      "target_audience": "Electronics & IT Goods Manufacturers (Domestic & International)",
+      "applicable_scope": "Consumer electronics, IT equipment, solar inverters, batteries, LED lighting, and smart devices notified under CRS.",
+      "fee_schedule": {
+        "application_fee": "₹1,000 per product model family",
+        "inspection_charge": "Nil (No pre-license factory inspection required)",
+        "test_report_validity": "90 Days from BIS Recognized LIMS Lab",
+        "license_duration": "2 Years (Renewable)",
+        "processing_fee": "₹50,000 per application (including model family additions as per schedule)",
+        "concessions": "Standard processing timeline and rates applicable across all eligible IT manufacturers."
+      },
+      "steps": [
+        "1. **Sample Testing**: Send product samples to a BIS Recognized Laboratory in India to test compliance against applicable IS standard.",
+        "2. **Online Registration**: Register on the `crsbis.in` portal after obtaining the valid 90-day lab test report.",
+        "3. **Application Submission**: Submit Self-Declaration of Conformity along with technical test reports and manufacturer declarations.",
+        "4. **Registration Grant**: BIS verifies documents online and issues the Registration Number (R-Number) without physical factory inspection."
+      ],
+      "required_documents": [
+        "Test Report from BIS Recognized Lab (issued within 90 days)",
+        "Self-Declaration of Conformity (SDoC) in prescribed format",
+        "Manufacturing unit business license / incorporation certificate",
+        "Brand/Trademark authorization letter if brand owner differs from manufacturer",
+        "Authorized Indian Representative (AIR) documents for foreign manufacturers",
+        "Critical Component List (CCL) and PCB layout schematics"
+      ],
+      "timelines": {
+        "registration_timeline": "15 to 20 working days post test report submission",
+        "test_report_validity": "90 calendar days from lab issuance",
+        "licence_validity": "2 Years initially, renewable for 2 to 5 years"
+      },
+      "official_url": "https://www.crsbis.in/BIS/",
+      "provenance": {
+        "regulation": "BIS (Conformity Assessment) Regulations 2018 - Scheme-II",
+        "gazette_id": "CRS-REG-2018-SCH2",
+        "source_url": "https://www.crsbis.in/BIS/app_srv/tdc/gl/docs/Revised_Fee_Structure.pdf",
+        "source_file": "raw_data/pdfs/82ebf6f11af2_Revised_Fee_Structure.pdf",
+        "source_hash": "82ebf6f11af23aab40a905c3181259f1982163cb9f699dfb5cc749794b0c7307"
+      }
+    },
+    {
+      "scheme_key": "fmcs",
+      "title": "Foreign Manufacturers Certification Scheme (FMCS)",
+      "full_name": "Foreign Manufacturers Certification Scheme (FMCS) for Overseas Facilities",
+      "governing_regulation": "BIS (Conformity Assessment) Regulations, 2018 - Foreign Manufacturers Scheme",
+      "target_audience": "Manufacturers located outside India exporting goods to India",
+      "applicable_scope": "Any product covered under mandatory or voluntary Indian Standards manufactured outside India.",
+      "fee_schedule": {
+        "application_fee": "USD $1,000",
+        "inspection_charge": "Actual international travel, lodging, and per-diem costs for BIS Inspecting Officers",
+        "performance_bank_guarantee": "USD $10,000",
+        "license_duration": "1 Year (Renewable)",
+        "annual_licence_fee": "USD $1,000 per year",
+        "marking_fee": "Calculated as per product marking rate in USD equivalent"
+      },
+      "steps": [
+        "1. **AIR Appointment**: Appoint an Authorized Indian Representative (AIR) legally resident in India.",
+        "2. **Application Submission**: Submit physical and online application with factory layout and quality manuals.",
+        "3. **Overseas Factory Inspection**: BIS officers travel to the overseas facility to inspect manufacturing and draw samples.",
+        "4. **Sample Testing & Grant**: Samples are tested in India. Upon passing and submitting the $10,000 PBG, the ISI mark licence is granted."
+      ],
+      "required_documents": [
+        "Form-V application along with detailed factory layout and machinery list",
+        "Authorized Indian Representative (AIR) agreement and proof of residency in India",
+        "Proof of factory registration issued by foreign national authorities",
+        "In-house laboratory test equipment list and calibration reports",
+        "Manufacturing process flow chart and raw material test certificates",
+        "Irrevocable Performance Bank Guarantee (PBG) of USD $10,000 from an RBI-approved bank"
+      ],
+      "timelines": {
+        "processing_time": "90 to 180 days (depending on visa, travel logistics, and lab testing)",
+        "licence_validity": "1 Year (Renewable for up to 5 years)"
+      },
+      "official_url": "https://www.bis.gov.in/fmcs/fmcs-overview/?lang=en",
+      "provenance": {
+        "regulation": "BIS (Conformity Assessment) Regulations 2018 - FMCS Guidelines",
+        "gazette_id": "FMCS-REG-2018-SCH1-INTL",
+        "source_url": "https://www.bis.gov.in/fmcs/fmcs-overview/?lang=en",
+        "source_file": "raw_data/pdfs/3d1bbc1f9563_certification-process.pdf",
+        "source_hash": "3d1bbc1f9563f515eeede828d56ef7a41820522a2f7cf4315541e4a17ee2ef42"
+      }
+    },
+    {
+      "scheme_key": "scheme_x",
+      "title": "Conformity Assessment for Capital Goods & Machinery (Scheme-X)",
+      "full_name": "Scheme-X: Conformity Assessment for Capital Goods, Machinery, and Customized Equipment",
+      "governing_regulation": "BIS (Conformity Assessment) Regulations, 2018 - Scheme X",
+      "target_audience": "Manufacturers of Custom-Built Machinery, Heavy Industrial Equipment & Sub-Assemblies",
+      "applicable_scope": "Pumps, compressors, customized gearboxes, pressure vessels, and heavy manufacturing machinery.",
+      "fee_schedule": {
+        "application_fee": "₹1,000",
+        "inspection_charge": "₹7,000 per man-day for design & audit verification",
+        "testing_basis": "Design calculation appraisal & in-situ prototype testing",
+        "license_duration": "2 Years (Renewable)",
+        "surveillance_charge": "₹7,000 per man-day for periodic technical audits"
+      },
+      "steps": [
+        "1. **Design Documentation**: Submit detailed engineering drawings, stress calculations, and component bill of materials.",
+        "2. **Technical Audit**: BIS technical experts audit the design methodology and manufacturing quality system.",
+        "3. **Factory & Field Testing**: On-site prototype testing and performance validation under operating conditions.",
+        "4. **Certificate of Conformity**: BIS issues Certificate of Conformity allowing equipment deployment."
+      ],
+      "required_documents": [
+        "Detailed engineering design calculations, drawings, and component specifications",
+        "Quality management system documentation conforming to ISO 9001",
+        "Raw material traceability reports and mill test certificates",
+        "Factory manufacturing setup and inspection apparatus list",
+        "Type test reports of safety components and subsystems"
+      ],
+      "timelines": {
+        "audit_duration": "30 to 45 days post design document submission",
+        "validity": "2 Years (Renewable based on technical audit)"
+      },
+      "official_url": "https://www.bis.gov.in/product-certification/scheme-x-overview/?lang=en",
+      "provenance": {
+        "regulation": "BIS (Conformity Assessment) Regulations 2018 - Scheme-X",
+        "gazette_id": "SCHEME-X-REG-2018",
+        "source_url": "https://www.bis.gov.in/product-certification/scheme-x-overview/?lang=en",
+        "source_file": "raw_data/pdfs/e8341ddecd4f_CoC-Surveillance-Guidelines-BIS-Website.pdf",
+        "source_hash": "e8341ddecd4f51b8187d35203fa249e495fa4cd56b2d92c907727b33e028556c"
+      }
+    },
+    {
+      "scheme_key": "hallmarking",
+      "title": "Gold & Silver Jewellery Hallmarking Scheme",
+      "full_name": "Hallmarking Scheme for Gold & Silver Jewellery and Artifacts under BIS Act 2016",
+      "governing_regulation": "BIS (Hallmarking) Regulations, 2018 & Mandatory Hallmarking Orders (IS 1417 / IS 2112)",
+      "target_audience": "Jewellers, Gold Refineries, and Assaying & Hallmarking Centres (AHC)",
+      "applicable_scope": "Gold jewellery (14K, 18K, 20K, 22K, 23K, 24K) and Silver articles marketed in notified districts.",
+      "fee_schedule": {
+        "jeweller_registration": "Free for Micro Enterprises; Tiered for Small/Medium/Large Jewellers",
+        "hallmarking_charge": "₹45 per gold article / ₹35 per silver article (+ GST)",
+        "huid_system": "Mandatory 6-digit alphanumeric Hallmark Unique Identification (HUID)",
+        "registration_validity": "Lifetime / 5-Year Cycle",
+        "minimum_ahc_batch_charge": "₹200 minimum per consignment at Assaying & Hallmarking Centre",
+        "consumer_compensation_rule": "Two times (2x) the purity discrepancy value refunded to consumer on verified defects"
+      },
+      "steps": [
+        "1. **Jeweller Online Registration**: Jewellers register online on the `manakonline.in` portal under the BIS Hallmarking Scheme.",
+        "2. **Submit to AHC**: Jeweller submits gold jewellery lots to a BIS Recognized Assaying & Hallmarking Centre (AHC).",
+        "3. **Assaying & Laser Marking**: AHC performs fire assay testing for karat purity (e.g., 22K/916, 18K/750, 14K/585) and laser-marks the BIS logo, purity grade, and unique 6-digit HUID.",
+        "4. **Verification on BIS CARE**: Consumer can scan and verify jewellery authenticity and jeweller details instantly via the **BIS CARE App**."
+      ],
+      "required_documents": [
+        "Proof of establishment / GST Registration Certificate of Jewellery Outlet",
+        "Aadhaar / PAN card of Proprietor / Partners / Directors",
+        "Turnover declaration for fee slab determination (Micro/Small/Medium/Large)",
+        "Location coordinates and premises ownership / lease deed"
+      ],
+      "timelines": {
+        "registration_issuance": "Instant / Within 1 working day online without manual audit",
+        "hallmarking_turnover_at_ahc": "Within 4 to 8 hours per batch at registered AHC",
+        "registration_validity": "Lifetime with automatic periodic renewal"
+      },
+      "official_url": "https://www.bis.gov.in/hallmarking-overview/?lang=en",
+      "provenance": {
+        "regulation": "BIS (Hallmarking) Regulations 2018 & Mandatory Hallmarking Order",
+        "gazette_id": "MANDATORY-HALLMARKING-ORDER-2020",
+        "source_url": "https://www.bis.gov.in/wp-content/uploads/2020/01/Mandatory-Hallmarking-Order-15.01.2020.pdf",
+        "source_file": "raw_data/pdfs/1f38c9758aa6_Mandatory-Hallmarking-Order-15.01.2020.pdf",
+        "source_hash": "1f38c9758aa65ce6a0c6ce1f98e8388bb1883ad4c3d65c11efbdd9b4189cc016"
+      }
+    },
+    {
+      "scheme_key": "scheme_iii",
+      "title": "Certificate of Conformity (Scheme-III / CoC)",
+      "full_name": "Scheme-III: Certificate of Conformity for Granular Batch & Lot Production",
+      "governing_regulation": "BIS (Conformity Assessment) Regulations, 2018 - Scheme III",
+      "target_audience": "Manufacturers needing one-time or batch-based conformity certification",
+      "applicable_scope": "Industrial inputs, specific building components, and non-continuous production batches.",
+      "fee_schedule": {
+        "application_fee": "₹1,000",
+        "inspection_charge": "₹7,000 per man-day",
+        "certificate_validity": "Batch-specific or 1 Year",
+        "testing_fee": "Actual test charges at BIS Recognized Lab"
+      },
+      "steps": [
+        "1. **Application**: Apply on `manakonline.in` under Scheme-III with batch size and standard specification.",
+        "2. **Lot Inspection**: BIS officer inspects the manufactured lot and draws representative samples.",
+        "3. **Testing**: Samples tested in recognized laboratory against standard parameters.",
+        "4. **CoC Issuance**: Certificate of Conformity issued for the inspected batch upon compliance."
+      ],
+      "required_documents": [
+        "Batch production records and consignment invoices",
+        "Internal test and inspection certificates for the specified lot",
+        "Factory manufacturing setup and testing facilities evidence"
+      ],
+      "timelines": {
+        "timeline": "20 to 30 days depending on sample testing duration"
+      },
+      "official_url": "https://www.bis.gov.in/product-certification/product-certification-overview/?lang=en",
+      "provenance": {
+        "regulation": "BIS (Conformity Assessment) Regulations 2018 - Scheme-III",
+        "gazette_id": "SCHEME-III-REG-2018",
+        "source_url": "https://www.bis.gov.in/product-certification/product-certification-overview/?lang=en",
+        "source_file": "raw_data/pdfs/e8341ddecd4f_CoC-Surveillance-Guidelines-BIS-Website.pdf",
+        "source_hash": "e8341ddecd4f51b8187d35203fa249e495fa4cd56b2d92c907727b33e028556c"
+      }
+    },
+    {
+      "scheme_key": "simplified_procedure",
+      "title": "Simplified Licensing Procedure (Tatkal / Scheme-I Option)",
+      "full_name": "Simplified Licensing Procedure for Grant of Licence (Scheme-I Fast-Track)",
+      "governing_regulation": "BIS Grant of Licence Guidelines (Simplified Procedure)",
+      "target_audience": "Domestic manufacturers with pre-tested independent lab reports for notified products",
+      "applicable_scope": "Over 80% of product standards notified under BIS Simplified Procedure list.",
+      "fee_schedule": {
+        "application_fee": "₹1,000",
+        "inspection_charge": "₹7,000 per man-day (conducted post-licence or within 30 days)",
+        "processing_timeline": "Target grant within 30 days from complete submission",
+        "concessions": "80% fee concession for Micro units, 50% for Startups and Women-led units"
+      },
+      "steps": [
+        "1. **Pre-Testing**: Get factory samples tested at a BIS Recognized Lab beforehand (report validity 90 days).",
+        "2. **Online Submission**: Submit application on `manakonline.in` with passing test report and in-house testing proof.",
+        "3. **Document Verification**: BIS conducts online verification of application and test report within 15-20 days.",
+        "4. **Fast-Track Grant**: Licence is granted immediately, followed by post-grant surveillance factory inspection."
+      ],
+      "required_documents": [
+        "Passing Test Report from BIS Recognized Lab (within 90 days)",
+        "Manufacturing and testing equipment lists with valid calibration",
+        "Consent letter for post-grant verification audit"
+      ],
+      "timelines": {
+        "licence_grant": "Within 30 calendar days",
+        "post_grant_audit": "Within 90 days of licence grant"
+      },
+      "official_url": "https://www.bis.gov.in/product-certification/product-certification-overview/?lang=en",
+      "provenance": {
+        "regulation": "BIS Simplified Procedure Guidelines 2024",
+        "gazette_id": "SIMPLIFIED-PROC-2024",
+        "source_url": "https://www.bis.gov.in/wp-content/uploads/2024/11/List-of-Products-Under-Simplified-Procedure.pdf",
+        "source_file": "raw_data/pdfs/51c1ae487dca_List-of-Products-Under-Simplified-Procedure.pdf",
+        "source_hash": "51c1ae487dcac929579c6680e5bd0e3030b9adec2afbcb78fc999a0724c9f9c5"
+      }
+    },
+    {
+      "scheme_key": "eco_mark",
+      "title": "ECO Mark Scheme (Environment-Friendly Products)",
+      "full_name": "ECO Mark Scheme for Environment-Friendly Consumer & Industrial Goods",
+      "governing_regulation": "Environment (Protection) Act & BIS ECO Mark Guidelines",
+      "target_audience": "Manufacturers producing environment-friendly goods meeting dual BIS and MoEFCC standards",
+      "applicable_scope": "Soaps, detergents, paints, paper, plastics, batteries, textiles, cosmetics, and architectural materials.",
+      "fee_schedule": {
+        "application_fee": "₹1,000",
+        "inspection_charge": "₹7,000 per man-day",
+        "testing_fee": "Standard Indian Standard testing fee + environmental criteria testing charges",
+        "license_duration": "2 Years (Renewable with ISI licence)"
+      },
+      "steps": [
+        "1. **Quality Compliance**: Ensure product complies with the base Indian Standard (e.g., IS specification).",
+        "2. **Environmental Criteria**: Meet MoEFCC environmental criteria (biodegradability, non-toxicity, recyclable packaging).",
+        "3. **Online Application**: Apply on `manakonline.in` with dual compliance documentation.",
+        "4. **Inspection & Grant**: Combined factory inspection and granting of ECO Logo along with ISI Mark."
+      ],
+      "required_documents": [
+        "Pollution Control Board (SPCB) consent to operate (CTO) certificate",
+        "Raw material environmental safety data sheets (MSDS)",
+        "Recyclability and non-toxic packaging certifications"
+      ],
+      "timelines": {
+        "processing_time": "60 days in conjunction with Scheme-I"
+      },
+      "official_url": "https://www.bis.gov.in/product-certification/eco-mark-scheme/?lang=en",
+      "provenance": {
+        "regulation": "MoEFCC / BIS ECO Mark Scheme Guidelines",
+        "gazette_id": "ECO-MARK-REG-2018",
+        "source_url": "https://www.bis.gov.in/product-certification/eco-mark-scheme/?lang=en",
+        "source_file": "raw_data/pdfs/3d1bbc1f9563_certification-process.pdf",
+        "source_hash": "3d1bbc1f9563f515eeede828d56ef7a41820522a2f7cf4315541e4a17ee2ef42"
+      }
+    }
+  ]
+}

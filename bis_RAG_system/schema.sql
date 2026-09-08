@@ -1,77 +1,95 @@
--- BIS Assistant — Phase 1, Step 4: structured storage schema
--- This mirrors what gets embedded into the vector DB, so you can always
--- trace a vector search hit back to its exact source clause, page, and PDF.
+-- BIS AI Assistant: Unified Relational & Telemetry Schema
+-- Holds structured corpus entities and live user interaction / telemetry logs.
 
-CREATE TABLE standards (
-    id              SERIAL PRIMARY KEY,
-    is_number       TEXT NOT NULL,          -- e.g. "IS 302"
-    part            TEXT,                   -- e.g. "1", NULL if no parts
-    revision_year   TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS standards (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    is_number       TEXT NOT NULL,          -- e.g. "IS 1786", "IS 1070"
+    part            TEXT,                   -- e.g. "Part 1", NULL if no parts
+    revision_year   TEXT NOT NULL,          -- e.g. "2008", "2023"
     title           TEXT,
-    is_current      BOOLEAN DEFAULT TRUE,   -- flip to FALSE when superseded
+    is_current      INTEGER DEFAULT 1,      -- 1 for current, 0 for superseded
     superseded_by   INTEGER REFERENCES standards(id),
     source_file     TEXT NOT NULL,
     source_url      TEXT,
-    content_hash    TEXT NOT NULL,          -- from scraper manifest — detects revisions
-    ingested_at     TIMESTAMPTZ DEFAULT now(),
+    content_hash    TEXT,
+    ingested_at     TEXT DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (is_number, part, revision_year)
 );
 
-CREATE TABLE clauses (
-    id              SERIAL PRIMARY KEY,
-    standard_id     INTEGER NOT NULL REFERENCES standards(id) ON DELETE CASCADE,
-    clause_number   TEXT NOT NULL,          -- e.g. "4.2.1"
+CREATE TABLE IF NOT EXISTS clauses (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    standard_id     INTEGER REFERENCES standards(id) ON DELETE CASCADE,
+    clause_number   TEXT NOT NULL,          -- e.g. "4.2", "Table 1"
     clause_title    TEXT,
     text            TEXT NOT NULL,
     page_start      INTEGER,
     page_end        INTEGER,
-    chunk_id        TEXT UNIQUE NOT NULL,   -- matches the vector DB record id
-    embedding_model TEXT,                   -- track which model embedded this, for re-embed migrations
-    created_at      TIMESTAMPTZ DEFAULT now()
+    chunk_id        TEXT UNIQUE NOT NULL,   -- matches vector DB chunk_id
+    embedding_model TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_clauses_standard ON clauses(standard_id);
-CREATE INDEX idx_clauses_text_search ON clauses USING GIN (to_tsvector('english', text));
+CREATE INDEX IF NOT EXISTS idx_clauses_standard ON clauses(standard_id);
+CREATE INDEX IF NOT EXISTS idx_clauses_chunk_id ON clauses(chunk_id);
 
--- Product -> mandatory standard mapping (CRS/QCO lists)
-CREATE TABLE product_standard_map (
-    id              SERIAL PRIMARY KEY,
+-- Product -> Mandatory Standard Mapping
+CREATE TABLE IF NOT EXISTS product_standard_map (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
     product_name    TEXT NOT NULL,
+    standard_code   TEXT NOT NULL,
     hsn_code        TEXT,
     category        TEXT,
-    standard_id     INTEGER REFERENCES standards(id),
-    mandatory       BOOLEAN NOT NULL,       -- CRS/QCO = mandatory, others voluntary
-    scheme_name     TEXT,                   -- e.g. "CRS", "ISI Mark", "Hallmarking"
+    mandatory       INTEGER NOT NULL DEFAULT 0, -- 1 = Mandatory under QCO/CRS, 0 = Voluntary
+    scheme_name     TEXT,                       -- e.g. "Scheme-I (ISI Mark)", "CRS"
     source_url      TEXT,
-    updated_at      TIMESTAMPTZ DEFAULT now()
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_product_search ON product_standard_map USING GIN (to_tsvector('english', product_name));
+CREATE INDEX IF NOT EXISTS idx_product_name ON product_standard_map(product_name);
+CREATE INDEX IF NOT EXISTS idx_product_standard ON product_standard_map(standard_code);
 
--- BIS-recognized testing labs
-CREATE TABLE labs (
-    id              SERIAL PRIMARY KEY,
+-- BIS Recognized Testing Laboratories Directory
+CREATE TABLE IF NOT EXISTS labs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    lab_id          TEXT UNIQUE,
     name            TEXT NOT NULL,
     city            TEXT,
     state           TEXT,
-    recognized_scopes TEXT[],               -- e.g. {'electrical', 'textiles'}
+    address         TEXT,
+    recognized_scopes TEXT,                     -- JSON or comma-separated standards
+    disciplines     TEXT,                       -- Electrical, Chemical, Civil, etc.
     contact_info    TEXT,
     source_url      TEXT,
-    updated_at      TIMESTAMPTZ DEFAULT now()
+    is_recognized   INTEGER DEFAULT 1,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_labs_state ON labs(state);
-CREATE INDEX idx_labs_scopes ON labs USING GIN (recognized_scopes);
+CREATE INDEX IF NOT EXISTS idx_labs_state ON labs(state);
+CREATE INDEX IF NOT EXISTS idx_labs_city ON labs(city);
 
--- Query logs for the feedback loop mentioned in Phase 6
-CREATE TABLE query_logs (
-    id              SERIAL PRIMARY KEY,
+-- Live Telemetry and Query Interaction Logs
+CREATE TABLE IF NOT EXISTS query_logs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
     user_query      TEXT NOT NULL,
     detected_language TEXT,
-    intent          TEXT,                   -- 'general_qa' | 'product_lookup' | 'certification_guide' | 'lab_locator' | 'consumer_complaint'
-    retrieved_chunk_ids TEXT[],
+    intent          TEXT,
+    retrieved_chunk_ids TEXT,                   -- JSON list of chunk_ids
     generated_answer TEXT,
-    confidence_score FLOAT,
-    user_feedback   SMALLINT,               -- 1 = thumbs up, -1 = thumbs down, NULL = no feedback
-    created_at      TIMESTAMPTZ DEFAULT now()
+    confidence_score REAL,
+    retrieval_ms    REAL,
+    generation_ms   REAL,
+    total_ms        REAL,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_query_logs_intent ON query_logs(intent);
+CREATE INDEX IF NOT EXISTS idx_query_logs_time ON query_logs(created_at);
+
+-- User Feedback Ratings on Query Answers
+CREATE TABLE IF NOT EXISTS feedback_ratings (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    query_id        INTEGER REFERENCES query_logs(id),
+    rating          INTEGER NOT NULL,           -- +1 = helpful, -1 = unhelpful
+    feedback_notes  TEXT,
+    submitted_at    TEXT DEFAULT CURRENT_TIMESTAMP
 );

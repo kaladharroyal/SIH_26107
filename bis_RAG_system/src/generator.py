@@ -15,9 +15,9 @@ from typing import Any, Dict, List, Optional
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("generator")
 
-# Automatically load .env file if present
+# Automatically load .env file using standard python-dotenv
 def _load_env():
-    # Priority: Project root containing src (.env in bis_RAG_system)
+    from dotenv import load_dotenv
     candidates = [
         Path(__file__).resolve().parent.parent / ".env",
         Path.cwd() / "bis_RAG_system" / ".env",
@@ -26,20 +26,9 @@ def _load_env():
     ]
     for p in candidates:
         if p.exists():
-            try:
-                with open(p, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith("#") and "=" in line:
-                            k, v = line.split("=", 1)
-                            k = k.strip()
-                            v = v.strip().strip("'\"")
-                            if k and v:
-                                os.environ[k] = v
-                log.info(f"Loaded environment variables from {p}")
-                break
-            except Exception:
-                pass
+            load_dotenv(dotenv_path=p, override=True)
+            log.info(f"Loaded environment variables from {p}")
+            break
 
 _load_env()
 
@@ -74,7 +63,7 @@ STRICT GROUNDING RULES:
 - CrossEncoder
 - embeddings
 - vector database
-- chunks
+- chunks or internal chunk identifiers (e.g. NEVER output 'chunk_1', 'chunk_2', 'chunk_3', etc.)
 - retrieval scores
 - prompts
 - model internals
@@ -111,10 +100,10 @@ Do not translate official document titles if doing so could make the citation am
 [Only verified details from the supplied BIS context.]
 
 ### Standard / Scheme (or मानक / ప్రమాణం / Standard)
-[Exact standard or scheme identifier.]
+[Exact standard or scheme identifier, e.g., IS 9000 / Scheme-I.]
 
 ### Source (or स्रोत / మూలం)
-[The one primary source selected by the citation system.]
+[Name the authentic BIS Standard, Clause Title, or official portal URL (e.g., 'IS 9000 - Environmental Testing Procedures (Official BIS Standards Portal: https://standardsbis.bsbedge.com/IS_9000.aspx)'). NEVER list 'chunk_1', 'chunk_2' or internal IDs.]
 
 Do not add unsupported information merely to make the response longer. Every factual claim must be supported by the supplied retrieved context."""
 
@@ -127,8 +116,35 @@ class BaseLLMProvider(ABC):
         pass
 
 
+import time
+import random
+
+
+def _retry_with_backoff(fn, max_retries: int = 3, initial_delay: float = 1.0, backoff_factor: float = 2.0):
+    """Executes a function with exponential backoff and jitter for transient failures."""
+    delay = initial_delay
+    last_exception = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            return fn()
+        except Exception as e:
+            last_exception = e
+            err_str = str(e).lower()
+            is_transient = any(t in err_str for t in ["429", "rate limit", "503", "502", "500", "timeout", "connection", "quota"])
+            if attempt == max_retries or not is_transient:
+                raise e
+            jitter = random.uniform(0.1, 0.5)
+            sleep_time = delay + jitter
+            log.warning(f"Transient LLM provider error on attempt {attempt}/{max_retries} ({e}). Retrying in {sleep_time:.2f}s...")
+            time.sleep(sleep_time)
+            delay *= backoff_factor
+    if last_exception is not None:
+        raise last_exception
+    raise RuntimeError("Retry failed with unknown error")
+
+
 class OpenAIProvider(BaseLLMProvider):
-    """OpenAI API provider."""
+    """OpenAI API provider with exponential backoff retry."""
 
     def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
@@ -140,14 +156,18 @@ class OpenAIProvider(BaseLLMProvider):
         import openai
 
         client = openai.OpenAI(api_key=self.api_key)
-        resp = client.chat.completions.create(
-            model=self.model_name,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=temperature,
-        )
+
+        def _call():
+            return client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=temperature,
+            )
+
+        resp = _retry_with_backoff(_call, max_retries=3)
         return {
             "response": resp.choices[0].message.content,
             "model_used": self.model_name,
@@ -157,7 +177,7 @@ class OpenAIProvider(BaseLLMProvider):
 
 
 class GeminiProvider(BaseLLMProvider):
-    """Google Gemini API provider supporting google.genai SDK, legacy SDK, and REST."""
+    """Google Gemini API provider supporting google.genai SDK, legacy SDK, and REST with retry logic."""
 
     def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
@@ -176,11 +196,15 @@ class GeminiProvider(BaseLLMProvider):
                 temperature=temperature,
                 system_instruction=system_prompt,
             )
-            response = client.models.generate_content(
-                model=self.model_name,
-                contents=user_prompt,
-                config=config,
-            )
+
+            def _genai_call():
+                return client.models.generate_content(
+                    model=self.model_name,
+                    contents=user_prompt,
+                    config=config,
+                )
+
+            response = _retry_with_backoff(_genai_call, max_retries=2)
             return {
                 "response": response.text,
                 "model_used": self.model_name,
@@ -196,10 +220,14 @@ class GeminiProvider(BaseLLMProvider):
                     model_name=self.model_name,
                     system_instruction=system_prompt,
                 )
-                response = model.generate_content(
-                    user_prompt,
-                    generation_config={"temperature": temperature},
-                )
+
+                def _legacy_call():
+                    return model.generate_content(
+                        user_prompt,
+                        generation_config={"temperature": temperature},
+                    )
+
+                response = _retry_with_backoff(_legacy_call, max_retries=2)
                 return {
                     "response": response.text,
                     "model_used": self.model_name,
@@ -214,7 +242,11 @@ class GeminiProvider(BaseLLMProvider):
                     "contents": [{"parts": [{"text": f"{system_prompt}\n\n{user_prompt}"}]}],
                     "generationConfig": {"temperature": temperature},
                 }
-                resp = requests.post(url, json=payload, timeout=30)
+
+                def _rest_call():
+                    return requests.post(url, json=payload, timeout=30)
+
+                resp = _retry_with_backoff(_rest_call, max_retries=2)
                 data = resp.json()
                 if resp.status_code != 200 or "candidates" not in data:
                     err_msg = data.get("error", {}).get("message", f"HTTP {resp.status_code}")
@@ -258,7 +290,7 @@ class MockOfflineProvider(BaseLLMProvider):
         else:
             context_part = user_prompt
 
-        context_chunks = [c for c in context_part.split("--- CONTEXT CHUNK") if c.strip()]
+        context_chunks = [c for c in re.split(r"--- (?:BIS DOCUMENT REFERENCE|CONTEXT CHUNK) \d+ ---", context_part) if c.strip()]
 
         return self.generate_offline_grounded_response(query, context_chunks, response_lang=response_lang)
 
@@ -321,15 +353,23 @@ class MockOfflineProvider(BaseLLMProvider):
                 s_lower = s_clean.lower()
                 has_match = False
                 for w in q_words:
-                    w_stem = w.removesuffix("s").removesuffix("ing").removesuffix("ed")
-                    if len(w_stem) >= 3 and (w_stem in s_lower or w in s_lower):
+                    root = w[:4] if len(w) >= 4 else w
+                    if root in s_lower or w in s_lower:
                         has_match = True
                         break
 
-                if has_match or len(synthesized_points) == 0:
+                if has_match:
                     matched_sentences.append(s_clean)
                     if len(matched_sentences) >= 2:
                         break
+
+            if not matched_sentences:
+                for s in sentences:
+                    s_clean = s.strip()
+                    if len(s_clean) >= 20 and not s_clean.startswith("---"):
+                        matched_sentences.append(s_clean)
+                        if len(matched_sentences) >= 2:
+                            break
 
             if matched_sentences:
                 combined_s = " ".join(matched_sentences)
@@ -439,17 +479,87 @@ class GroundedGenerator:
             clause_repr = f"Clause {clause_no}" if clause_no else "Clause General"
 
             formatted.append(
-                f"--- CONTEXT CHUNK {idx} ---\n"
+                f"--- BIS DOCUMENT REFERENCE {idx} ---\n"
+                f"Document / Standard: {std_repr}\n"
+                f"Clause / Section: {clause_repr} ({clause_title})\n"
+                f"IS Number: {std_repr}\n"
+                f"Clause: {clause_repr}\n"
                 f"Chunk ID: {chunk_id}\n"
                 f"Category: {category}\n"
-                f"IS Number: {std_repr}\n"
-                f"Clause: {clause_repr} ({clause_title})\n"
                 f"Page: {page_start}-{page_end}\n"
+                f"Official Source URL: {source_url}\n"
                 f"Source: {source_url}\n"
                 f"Content:\n{content}\n"
             )
 
         return "\n".join(formatted)
+
+    @staticmethod
+    def sanitize_user_input(text: str) -> str:
+        """Sanitizes user query to neutralize prompt injection delimiter attacks."""
+        if not text:
+            return ""
+        # Strip adversarial instruction delimiters and role impersonations
+        cleaned = re.sub(r"(?i)(?:---|===)\s*(?:system|instruction|assistant|developer|prompt|rules).*", "", text)
+        cleaned = re.sub(r"(?i)ignore\s+(?:all\s+)?(?:previous|prior|above)\s+instructions?", "", cleaned)
+        return cleaned.strip()
+
+    @staticmethod
+    def clean_response_sources(response_text: str, context_chunks: List[Dict[str, Any]]) -> str:
+        """
+        Cleans up raw internal chunk references or hash IDs (e.g. 'is_s_...', 'core_...', 'chunk_1...', 'faq_...')
+        from the generated response text and replaces them with authentic BIS document standard titles and URLs.
+        """
+        if not response_text or not context_chunks:
+            return response_text or ""
+
+        # Build list of authentic source representations from context_chunks
+        authentic_sources = []
+        seen = set()
+        for item in context_chunks:
+            doc = item.get("doc", item)
+            std = (doc.get("is_number") or doc.get("standard") or "").strip()
+            title = (doc.get("clause_title") or doc.get("product") or doc.get("title") or "").strip()
+            url = (doc.get("source_url") or doc.get("source_file") or "").strip()
+
+            parts = []
+            if std and std.lower() not in ["none", "null", "general"]:
+                parts.append(std)
+            if title and title.lower() not in ["none", "null", "general specification"] and title != std:
+                parts.append(title)
+
+            label = " - ".join(parts) if parts else (std or title or "Official BIS Standard")
+            if url and url.startswith("http"):
+                full_src = f"{label} ([Official BIS Portal]({url}))"
+            else:
+                full_src = label
+
+            if full_src not in seen:
+                seen.add(full_src)
+                authentic_sources.append(full_src)
+
+        primary_source_bullets = "\n".join(f"- {s}" for s in authentic_sources[:4]) if authentic_sources else "- Official Bureau of Indian Standards Portal (https://standardsbis.bsbedge.com/)"
+
+        # 1. Detect ### Source / ### स्रोत / ### మూలం header with internal hashes or bullets
+        source_header_pattern = r"(?i)(###\s*(?:Source|स्रोत|మూలం|Sources)\s*\n+)([\s\S]*?)(?=\n\n###|\Z)"
+
+        def replace_source_section(match):
+            header = match.group(1)
+            content = match.group(2).strip()
+            # If the content contains internal hash patterns (is_s_, core_, chunk_, etc.) or raw hashes
+            if re.search(r"\b(?:is_s_|core_|faq_|lab_|scheme_|chunk_|raw_|[0-9a-f]{12,32})\w*\b", content, re.IGNORECASE) or len(content) < 5:
+                return f"{header}{primary_source_bullets}"
+            return match.group(0)
+
+        cleaned_text = re.sub(source_header_pattern, replace_source_section, response_text)
+
+        # 2. General fallback for any remaining hash strings in the text
+        cleaned_text = re.sub(
+            r"\b(?:is_s_|core_|faq_|lab_|scheme_|chunk_)[0-9a-zA-Z_]+\b",
+            "Official BIS Documentation",
+            cleaned_text,
+        )
+        return cleaned_text
 
     def generate_response(
         self,
@@ -458,40 +568,128 @@ class GroundedGenerator:
         response_language: str = "English",
         original_query: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Generates grounded response using the configured provider with strict language enforcement."""
+        """Generates grounded response using the configured provider with strict language enforcement and multi-tier failover."""
+        orig_q = self.sanitize_user_input(original_query or query)
+        norm_q = self.sanitize_user_input(query)
+
+        if not context_chunks:
+            if "hindi" in response_language.lower() or response_language.lower() == "hi":
+                refusal = "उपलब्ध BIS सामग्री इस जानकारी की पुष्टि करने के लिए पर्याप्त नहीं है।"
+            elif "telugu" in response_language.lower() or response_language.lower() == "te":
+                refusal = "లభ్యమైన BIS సమాచారం దీనిని నిర్ధారించడానికి సరిపోదు."
+            else:
+                refusal = "The retrieved BIS material does not provide enough information to confirm this."
+            return {
+                "response": refusal,
+                "model_used": "no-context-gate",
+                "provider": "grounding-gate",
+                "chunks_used": 0,
+                "response_language": response_language,
+                "fallback_triggered": True,
+            }
+
         context_str = self.format_context_block(context_chunks)
-        orig_q = original_query or query
 
         user_prompt = (
             f"ORIGINAL USER QUERY:\n{orig_q}\n\n"
             f"RESPONSE LANGUAGE:\n{response_language}\n\n"
-            f"USER QUERY (NORMALIZED):\n{query}\n\n"
+            f"USER QUERY (NORMALIZED):\n{norm_q}\n\n"
             f"RETRIEVED BIS EVIDENCE (SOURCE OF TRUTH):\n{context_str}\n\n"
             f"INSTRUCTION:\n"
             f"Generate a grounded response based EXCLUSIVELY on the retrieved BIS evidence above. "
             f"You MUST write the entire response in '{response_language}'. "
-            f"Preserve exact technical identifiers such as IS numbers, clause numbers, and scheme names unchanged."
+            f"If the retrieved evidence does not specify an asked parameter (such as a specific fee, date, or clause), explicitly state that it is not specified in the retrieved BIS documents. "
+            f"Preserve exact technical identifiers such as IS numbers, clause numbers, and scheme names unchanged. "
+            f"Under the '### Source' section, cite the authentic standard number, document title, or official URL from the retrieved evidence. NEVER output 'chunk_1', 'chunk_2', or internal chunk identifiers."
         )
 
-        log.info(f"Generating grounded response for: '{query[:40]}' (Lang: {response_language}, {len(context_chunks)} chunks, provider: {self.provider.__class__.__name__})")
+        log.info(f"Generating grounded response for: '{norm_q[:40]}' (Lang: {response_language}, {len(context_chunks)} chunks, provider: {self.provider.__class__.__name__})")
 
+        # Tier 1: Primary Configured Provider
         try:
             result = self.provider.generate(
                 system_prompt=SYSTEM_GROUNDING_PROMPT,
                 user_prompt=user_prompt,
                 temperature=0.1,
             )
+            result["response"] = self.clean_response_sources(result.get("response", ""), context_chunks)
             result["chunks_used"] = len(context_chunks)
             result["response_language"] = response_language
             return result
-        except Exception as e:
-            log.warning(f"Generation with {self.provider.__class__.__name__} failed: {e}. Falling back to MockOfflineProvider.")
+        except Exception as e_primary:
+            log.warning(f"Tier 1 Generation with {self.provider.__class__.__name__} failed: {e_primary}")
+
+            # Tier 2: Secondary OpenAI Fallback (if primary was Gemini and OpenAI key exists)
+            openai_key = os.getenv("OPENAI_API_KEY")
+            if not isinstance(self.provider, OpenAIProvider) and openai_key:
+                try:
+                    log.info("Attempting Tier 2 OpenAI fallback provider...")
+                    sec_provider = OpenAIProvider(api_key=openai_key)
+                    result = sec_provider.generate(SYSTEM_GROUNDING_PROMPT, user_prompt, temperature=0.1)
+                    result["response"] = self.clean_response_sources(result.get("response", ""), context_chunks)
+                    result["chunks_used"] = len(context_chunks)
+                    result["response_language"] = response_language
+                    result["fallback_triggered"] = True
+                    return result
+                except Exception as e_sec:
+                    log.warning(f"Tier 2 OpenAI fallback failed: {e_sec}")
+
+            # Tier 3: Deterministic Offline Synthesizer Fallback
+            log.info("Falling back to Tier 3 MockOfflineProvider.")
             fallback = MockOfflineProvider()
             res = fallback.generate(SYSTEM_GROUNDING_PROMPT, user_prompt, temperature=0.1)
+            res["response"] = self.clean_response_sources(res.get("response", ""), context_chunks)
             res["chunks_used"] = len(context_chunks)
             res["fallback_triggered"] = True
             res["response_language"] = response_language
             return res
+
+    def generate(
+        self,
+        query: str,
+        context_chunks: List[Dict[str, Any]],
+        language: str = "English",
+        intent: Optional[str] = None,
+        original_query: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Wrapper method providing unified text, citations, and primary_source."""
+        res = self.generate_response(
+            query=query,
+            context_chunks=context_chunks,
+            response_language=language,
+            original_query=original_query,
+        )
+        response_text = res.get("response", "")
+        citations = []
+        primary_source = None
+        for item in context_chunks:
+            doc = item.get("doc", item)
+            citations.append({
+                "chunk_id": doc.get("chunk_id"),
+                "is_number": doc.get("is_number"),
+                "clause_number": doc.get("clause_number"),
+                "source_document": doc.get("source_document") or doc.get("source_file"),
+                "source_url": doc.get("source_url"),
+                "title": doc.get("clause_title") or doc.get("title") or doc.get("product"),
+            })
+            if not primary_source and doc.get("source_url"):
+                primary_source = {
+                    "source_document": doc.get("source_document") or doc.get("source_file"),
+                    "source_url": doc.get("source_url"),
+                    "is_number": doc.get("is_number"),
+                }
+
+        return {
+            "text": response_text,
+            "response": response_text,
+            "citations": citations,
+            "primary_source": primary_source,
+            "model_used": res.get("model_used"),
+            "provider": res.get("provider"),
+            "chunks_used": res.get("chunks_used", len(context_chunks)),
+            "response_language": res.get("response_language", language),
+        }
+
 
 
 if __name__ == "__main__":

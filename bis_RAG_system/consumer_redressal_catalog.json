@@ -1,0 +1,143 @@
+{
+  "version": "2026.1",
+  "source_description": "Bureau of Indian Standards Act 2016, BIS (Hallmarking) Regulations 2018, and Consumer Protection Act 2019",
+  "categories": [
+    {
+      "category_key": "hallmarking_complaint",
+      "title": "Gold & Silver Jewellery Purity & Hallmarking Grievance",
+      "governing_law": "BIS (Hallmarking) Regulations, 2018 (Regulation 12) & Mandatory Hallmarking Order",
+      "applicable_scope": "Gold jewellery (14K, 18K, 20K, 22K, 23K, 24K) and Silver articles sold with BIS hallmark or HUID that fail purity verification.",
+      "statutory_compensation": "Under Regulation 12 of BIS (Hallmarking) Regulations, 2018: If hallmarked gold or silver jewellery fails the prescribed purity test when tested at a BIS Recognized Assaying and Hallmarking Centre (AHC), the consumer is legally entitled to compensation equal to TWO TIMES (2x) the value of the purity shortfall, along with full reimbursement of testing charges incurred.",
+      "penalties_on_violator": "Suspension or cancellation of jeweller's BIS registration, monetary fines, and confiscation of non-compliant articles under the BIS Act, 2016.",
+      "required_evidence": [
+        "Original tax invoice / bill mentioning weight and karat purity from the jeweller",
+        "6-digit alphanumeric Hallmark Unique Identification (HUID) laser-marked on the article",
+        "Test Report from a BIS Recognized Assaying and Hallmarking Centre (AHC) confirming purity deficit",
+        "Photographs of the jewellery piece showing the BIS logo and hallmark stamps"
+      ],
+      "filing_channels": [
+        "1. **BIS CARE Mobile App**: Open the BIS CARE App, click 'Verify HUID' to check jewellery credentials, and select 'File Grievance'.",
+        "2. **Online Portal**: Register grievance on the [Official BIS Complaint Registration Portal](https://www.bis.gov.in/consumer-overview/online-complaint-registration/?lang=en).",
+        "3. **Toll-Free National Helpline**: Call `1800-11-4000` or National Consumer Helpline `1915` (Mon-Sat, 9:00 AM - 5:30 PM).",
+        "4. **Email Redressal**: Send detailed complaint with purchase bill to `complaints@bis.gov.in`."
+      ],
+      "official_url": "https://www.bis.gov.in/consumer-overview/online-complaint-registration/?lang=en",
+      "provenance": {
+        "act": "BIS Act 2016 & Hallmarking Regulations 2018",
+        "section": "Regulation 12 (Compensation for shortfall in purity of precious metal article)",
+        "source_url": "https://www.bis.gov.in/wp-content/uploads/2020/01/Mandatory-Hallmarking-Order-15.01.2020.pdf",
+        "source_file": "raw_data/pdfs/1f38c9758aa6_Mandatory-Hallmarking-Order-15.01.2020.pdf",
+        "source_hash": "1f38c9758aa65ce6a0c6ce1f98e8388bb1883ad4c3d65c11efbdd9b4189cc016"
+      }
+    },
+    {
+      "category_key": "isi_counterfeit_complaint",
+      "title": "Counterfeit / Fake ISI Mark & Unauthorized Use of Standard Mark",
+      "governing_law": "Bureau of Indian Standards Act, 2016 (Sections 14, 15, and 29)",
+      "applicable_scope": "Products manufactured, sold, or distributed with a fake, copied, or unauthorized ISI Standard Mark without a valid BIS license.",
+      "statutory_compensation": "Under the BIS Act, 2016 and Consumer Protection Act, 2019: Selling non-certified goods under mandatory QCO/CRS or using a counterfeit/fake ISI mark is a punishable offense. The consumer is entitled to product replacement, full refund with interest, and the manufacturer/seller faces immediate product recall, license cancellation, and statutory penalties.",
+      "penalties_on_violator": "Under Section 29 of the BIS Act, 2016: Imprisonment for a term up to two (2) years, or fine of not less than ₹2,00,000 which may extend up to ten times the value of goods or ₹5,00,000, or both, along with seizure and forfeiture of property.",
+      "required_evidence": [
+        "Photographs of the product, packaging, and the counterfeit ISI mark / CML number",
+        "Purchase bill, invoice, or online order receipt showing seller name and date",
+        "Product manufacturer name, physical address, and batch/lot number",
+        "Location of the retail shop / online marketplace URL selling the counterfeit good"
+      ],
+      "filing_channels": [
+        "1. **BIS CARE Mobile App**: Use 'Verify License Details' (CM/L number) and click 'Report Misuse of ISI Mark'.",
+        "2. **Online Enforcement Portal**: File a raid and enforcement request on [Manakonline Portal](https://www.manakonline.in).",
+        "3. **Toll-Free National Helpline**: Call `1800-11-4000` to report illegal manufacturing units anonymously.",
+        "4. **Central Enforcement Cell Email**: Send photos and location evidence to `complaints@bis.gov.in` and `enforcement@bis.gov.in`."
+      ],
+      "official_url": "https://www.bis.gov.in/consumer-overview/online-complaint-registration/?lang=en",
+      "provenance": {
+        "act": "Bureau of Indian Standards Act 2016",
+        "section": "Section 14 & Section 29 (Penalties for unauthorized use of Standard Mark)",
+        "source_url": "https://www.bis.gov.in/wp-content/uploads/2018/08/certification-process.pdf",
+        "source_file": "raw_data/pdfs/3d1bbc1f9563_certification-process.pdf",
+        "source_hash": "3d1bbc1f9563f515eeede828d56ef7a41820522a2f7cf4315541e4a17ee2ef42"
+      }
+    },
+    {
+      "category_key": "isi_product_complaint",
+      "title": "Substandard / Defective ISI Certified Goods Grievance",
+      "governing_law": "BIS Act, 2016 (Section 16, 18) & Consumer Protection Act, 2019 (Product Liability)",
+      "applicable_scope": "Goods carrying genuine ISI mark that fail quality tests, break prematurely, or do not conform to the Indian Standard specification.",
+      "statutory_compensation": "Under the BIS Act, 2016 and Consumer Protection Act, 2019: Selling non-certified goods under mandatory QCO/CRS or using a counterfeit/fake ISI mark is a punishable offense. The consumer is entitled to product replacement, full refund with interest, and the manufacturer/seller faces immediate product recall, license cancellation, and statutory penalties.",
+      "penalties_on_violator": "BIS will issue a Stop Marking Order, draw market surveillance samples, and may cancel the licensee's CM/L manufacturing license. The consumer court may also award product liability damages.",
+      "required_evidence": [
+        "Copy of tax invoice or cash memo with product description",
+        "7 or 8-digit CM/L license number printed under the ISI mark",
+        "Batch number, date of manufacture, and clear explanation of defect/failure",
+        "Defective product sample for laboratory testing (if requested by BIS officer)"
+      ],
+      "filing_channels": [
+        "1. **BIS CARE Mobile App**: Open 'Complaints' -> 'Substandard Quality' and enter the CM/L number.",
+        "2. **Online Complaint Registration**: Submit formal grievance on [BIS Online Complaint System](https://www.bis.gov.in/consumer-overview/online-complaint-registration/?lang=en).",
+        "3. **Toll-Free Helpline**: Contact BIS grievance cell at `1800-11-4000`.",
+        "4. **Email Grievance**: Send formal notice with invoice to `complaints@bis.gov.in`."
+      ],
+      "official_url": "https://www.bis.gov.in/consumer-overview/online-complaint-registration/?lang=en",
+      "provenance": {
+        "act": "Bureau of Indian Standards Act 2016",
+        "section": "Section 16 & Section 18 (Prohibition of manufacture, sale without Standard Mark)",
+        "source_url": "https://www.bis.gov.in/wp-content/uploads/2026/02/MarketSurveillance-Guidelines-25Feb2026.pdf",
+        "source_file": "raw_data/pdfs/e2fb91aa4f7d_MarketSurveillance-Guidelines-25Feb2026.pdf",
+        "source_hash": "e2fb91aa4f7d98f2afa9f8ec32bdf6a580a6bfd309bb6bcc4a4f16da08b6e771"
+      }
+    },
+    {
+      "category_key": "crs_electronics_complaint",
+      "title": "Unregistered / Defective Electronics under Compulsory Registration Scheme (CRS)",
+      "governing_law": "Electronics & IT Goods (Compulsory Registration Requirement) Order & BIS Act 2016",
+      "applicable_scope": "Laptops, mobile phones, adapters, power banks, LED lights, or solar inverters sold without a valid 8-digit R-Number.",
+      "statutory_compensation": "Under MeitY/MHI QCOs: Distribution or sale of non-CRS registered electronics is prohibited. Consumers are entitled to full refund, replacement, and protection against electrical/fire safety hazards under Consumer Protection Act 2019.",
+      "penalties_on_violator": "Customs confiscation of imported consignments, criminal prosecution under Section 29 of BIS Act 2016, and blacklisting of foreign/domestic brand owners.",
+      "required_evidence": [
+        "Product serial number, brand name, model number",
+        "Photographs of product rating label (showing absence or falsification of R-number)",
+        "Retail invoice / e-commerce platform order confirmation"
+      ],
+      "filing_channels": [
+        "1. **BIS CARE App**: Select 'Verify R-Number' on BIS CARE and report fake registration.",
+        "2. **CRS Portal**: Check registration authenticity on [CRSBIS Portal](https://www.crsbis.in/BIS/).",
+        "3. **National Consumer Helpline**: Register grievance at `1915` or online at `consumerhelpline.gov.in`.",
+        "4. **Email**: Send non-compliance report to `complaints@bis.gov.in`."
+      ],
+      "official_url": "https://www.crsbis.in/BIS/",
+      "provenance": {
+        "act": "BIS (Conformity Assessment) Regulations 2018 - Scheme-II",
+        "section": "MeitY Compulsory Registration Scheme Guidelines",
+        "source_url": "https://www.crsbis.in/BIS/app_srv/tdc/gl/docs/brochure.pdf",
+        "source_file": "raw_data/pdfs/d42464bf3dde_brochure.pdf",
+        "source_hash": "d42464bf3ddef68ce1e11b66cdc250674d89d92a2804fe71873f72cb43129d57"
+      }
+    },
+    {
+      "category_key": "deceptive_advertising_complaint",
+      "title": "Misleading Standards Claims & False BIS Endorsements",
+      "governing_law": "Consumer Protection Act, 2019 (Section 21) & BIS Act, 2016 (Section 15)",
+      "applicable_scope": "Brands advertising 'BIS Approved', 'Government Certified', or displaying fake ISI logos in TV, print, or social media ads.",
+      "statutory_compensation": "Under CPA 2019 Section 21: The Central Consumer Protection Authority (CCPA) may impose a penalty of up to ₹10,00,000 on manufacturers and endorsers for false or misleading advertisements, and direct corrective advertising.",
+      "penalties_on_violator": "Penalties up to ₹50,00,000 for subsequent offenses, prohibition of endorser for up to 1 year, and license cancellation.",
+      "required_evidence": [
+        "Copy or screenshot of the misleading advertisement (print, digital, or TV commercial)",
+        "Product link or marketing brochure displaying the false claim",
+        "Product packaging showing false representation"
+      ],
+      "filing_channels": [
+        "1. **CCPA / NCH Portal**: Report misleading advertisements on [GAMA Portal](https://gama.gov.in) or call `1915`.",
+        "2. **BIS CARE Mobile App**: Click 'Report Misleading Advertisement'.",
+        "3. **Email**: Report deceptive advertising to `complaints@bis.gov.in`."
+      ],
+      "official_url": "https://www.bis.gov.in/consumer-overview/online-complaint-registration/?lang=en",
+      "provenance": {
+        "act": "Consumer Protection Act 2019 & BIS Act 2016",
+        "section": "Section 21 CPA 2019 (Misleading Advertisements)",
+        "source_url": "https://www.bis.gov.in/consumer-overview/online-complaint-registration/?lang=en",
+        "source_file": "raw_data/pdfs/3d1bbc1f9563_certification-process.pdf",
+        "source_hash": "3d1bbc1f9563f515eeede828d56ef7a41820522a2f7cf4315541e4a17ee2ef42"
+      }
+    }
+  ]
+}
