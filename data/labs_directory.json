@@ -1,0 +1,7 @@
+{
+  "dataset_name": "labs_directory",
+  "total_records": 0,
+  "records": [],
+  "status": "unavailable",
+  "status_reason": "Dynamic LIMS lab API records require live BIS authentication; static dataset currently unavailable"
+}

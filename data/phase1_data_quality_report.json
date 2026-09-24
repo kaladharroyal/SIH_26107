@@ -1,0 +1,47 @@
+{
+  "timestamp": "2026-09-25T15:43:18.316480+00:00",
+  "dataset_name": "PHASE2_CANONICAL_CORPUS",
+  "dataset_scope": "Authoritative Canonical BIS Corpus (recovery_manifest.jsonl)",
+  "runtime_seconds": 7474.86,
+  "raw_records": {
+    "discovered": 1436,
+    "processed": 1436,
+    "quarantined": 0,
+    "explicitly_skipped": 0,
+    "reconciliation_equation": "1436 == 1436 + 0 + 0",
+    "reconciliation_valid": true
+  },
+  "canonical_reconciliation": {
+    "canonical_records": 1436,
+    "processed": 1436,
+    "failed": 0,
+    "skipped": 0,
+    "unresolved": 0,
+    "reconciliation_formula": "1436 + 0 + 0 + 0 == 1436",
+    "reconciliation_valid": true,
+    "documents_with_chunks": 1179,
+    "documents_without_chunks": 257,
+    "failed_records_detail": [],
+    "unresolved_records_detail": []
+  },
+  "chunk_accounting": {
+    "total_raw_chunks": 39278,
+    "unique_chunks": 39082,
+    "duplicates_eliminated": 196,
+    "reconciliation_equation": "39278 == 39082 + 196",
+    "reconciliation_valid": true
+  },
+  "metadata_integrity": {
+    "verified_is_standards": 7436,
+    "non_standard_policy_chunks": 729,
+    "unknown_identity_chunks": 30917,
+    "category_distribution": {
+      "is_standard": 18184,
+      "general_policy": 18484,
+      "qco_order": 1178,
+      "certification": 702,
+      "hallmarking": 534
+    }
+  },
+  "corpus_hash": "36fffe44a8c1555f228b698d7059c46db5614a65ef2e0db215387bec72a2a890"
+}

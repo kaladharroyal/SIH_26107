@@ -1,0 +1,161 @@
+# BIS source config — every URL below was verified live via search/fetch on 2026-08-27.
+# Organized by the problem statement's required capability, not by BIS's own site structure,
+# so it's easy to see what feeds which feature of the assistant.
+#
+# NOTES ON SCRAPABILITY:
+#   - "html_page" sources go through scrape_html_page(), which auto-splits FAQ pages into
+#     Q&A pairs (verified working against the real bis.gov.in FAQ markup — see phase1 tests).
+#   - Sources marked [JS-RENDERED] are single-page apps; plain requests+BeautifulSoup will
+#     return an empty shell. Use browser devtools to find the underlying JSON API and hit
+#     that directly instead — don't point the scraper at these URLs as-is.
+#   - manakonline.in and crsbis.in are separate portals BIS operates alongside bis.gov.in —
+#     don't assume everything lives under one domain.
+
+# ── 1. Product recommender / "which standard applies to my product" ──────────
+- url: "https://www.bis.gov.in/product-certification/products-under-compulsory-certification/?lang=en"
+  type: html_page
+  category: product_standard_mapping
+
+- url: "https://www.bis.gov.in/product-certification/products-under-compulsory-certification-scheme-x/"
+  type: html_page
+  category: product_standard_mapping   # Scheme-X (a newer compulsory-certification track)
+
+# JS-RENDERED — find the API this calls before scraping:
+# "Know Your Standards" (search any IS number, see licensees + labs against it)
+# https://standards.bis.gov.in/website/know-your-standards
+# "Search Indian Standard against a product" (manakonline)
+# https://www.manakonline.in/MANAK/ApplicationLicenceRelatedrpt
+
+# ── 2. Certification scheme guidance + process explainers ────────────────────
+- url: "https://www.bis.gov.in/product-certification/product-certification-overview/?lang=en"
+  type: html_page
+  category: certification_process
+
+- url: "https://www.bis.gov.in/product-certification/product-certification-process/?lang=en"
+  type: html_page
+  category: certification_process
+
+- url: "https://www.bis.gov.in/product-certification/product-certification-faq/?lang=en"
+  type: html_page
+  category: certification_faq   # verified: 28 clean Q&A pairs, official fee figures included
+
+- url: "https://www.bis.gov.in/system-certification-overview/?lang=en"
+  type: html_page
+  category: certification_process   # Systems Certification (ISO-style management systems)
+
+- url: "https://www.bis.gov.in/system-certification-overview/system-certification-faq/?lang=en"
+  type: html_page
+  category: certification_faq
+
+- url: "https://www.bis.gov.in/fmcs/fmcs-overview/?lang=en"
+  type: html_page
+  category: certification_process   # FMCS = Foreign Manufacturers Certification Scheme
+
+- url: "https://www.bis.gov.in/fmcs/fmcs-faqs/?lang=en"
+  type: html_page
+  category: certification_faq
+
+- url: "https://www.crsbis.in/BIS/about-crs.do"
+  type: html_page
+  category: certification_process   # CRS = Compulsory Registration Scheme (electronics/IT)
+
+- url: "https://www.crsbis.in/BIS/faq-bis.do"
+  type: html_page
+  category: certification_faq
+
+# ── 3. Licensing procedure (how to actually apply, fees, renewal) ────────────
+- url: "https://www.bis.gov.in/product-certification/product-certification-fee/?lang=en"
+  type: html_page
+  category: licensing_fees
+
+- url: "https://www.bis.gov.in/product-certification/product-certificatin-apply-online/?lang=en"
+  type: html_page
+  category: licensing_procedure
+
+- url: "https://www.bis.gov.in/wp-content/uploads/2021/04/List-of-Products-Under-Simplified-Procedure.pdf"
+  type: pdf_listing   # actually a single direct PDF; scraper's listing-scan will find it fine
+  category: licensing_procedure
+
+# ── 4. Testing labs ────────────────────────────────────────────────────────
+- url: "https://www.bis.gov.in/laboratorys/list-of-bis-recognized-lab/?lang=en"
+  type: pdf_listing   # this listing page links directly to the Group-1/Group-2 PDFs below
+  category: lab_directory
+
+# Direct PDFs (in case the listing page's link structure changes):
+#   Group-1 (BIS-recognized labs): bis.gov.in/wp-content/uploads/2026/06/Group_1_24062026.pdf
+#   Group-2 (BIS-empanelled labs): bis.gov.in/wp-content/uploads/2026/04/Group-2_23042026.pdf
+#   (filenames are date-stamped and change on each update — always re-resolve from the
+#    listing page rather than hardcoding these two paths long-term)
+
+# JS-RENDERED — richer, filterable, 431 labs with per-lab test-scope detail:
+# https://lims.bis.gov.in/home/labs/  (BIS-recognized)
+# https://lims.bis.gov.in/home/empaneled_labs/  (BIS-empanelled)
+# https://lims.bis.gov.in/home/search_is_number/  (search labs BY Indian Standard number —
+#   this one is especially valuable for the "which lab tests IS XXXX" query type)
+
+- url: "https://www.bis.gov.in/laboratorys/laboratory-services-overview/laboratory-faq/?lang=en"
+  type: html_page
+  category: lab_faq
+
+# ── 5. Hallmarking guidance ────────────────────────────────────────────────
+- url: "https://www.bis.gov.in/hallmarking-overview/?lang=en"
+  type: html_page
+  category: hallmarking
+
+- url: "https://www.bis.gov.in/hallmarking-overview/hallmarking-faqs/hallmarking-faq/?lang=en"
+  type: html_page
+  category: hallmarking_faq   # "General" FAQ
+
+- url: "https://www.bis.gov.in/hallmarking-overview/hallmarking-faqs/mandatory/?lang=en"
+  type: html_page
+  category: hallmarking_faq   # Consumer-facing FAQ — compensation rules, complaint process
+
+- url: "https://www.bis.gov.in/hallmarking-overview/hallmarking-faqs/bis-act-and-regulation-faq/"
+  type: html_page
+  category: hallmarking_faq
+
+- url: "https://www.bis.gov.in/hallmarking-overview/jewellers-registration-scheme/?lang=en"
+  type: html_page
+  category: hallmarking
+
+- url: "https://www.bis.gov.in/hallmarking-overview/mandatory-hallmarking-order/?lang=en"
+  type: html_page
+  category: hallmarking   # links to district-wise mandatory rollout PDFs — check which
+                          # districts are currently covered before telling a consumer
+                          # hallmarking is mandatory where they are
+
+# JS-backed lookups (separate manakonline.in / huid.manakonline.in domain):
+# List of licensed jewellers: bis.gov.in/hallmarking-overview/jewellers-registration-scheme/list-of-licensed-jewellers/
+# List of A&H (Assaying & Hallmarking) centres: https://huid.manakonline.in/MANAK/AHCListForWebsite
+# HUID verification (consumer checks their jewellery's hallmark authenticity) is inside the
+# BIS CARE app, not a scrapable web page — mention the app in the assistant's answer instead
+# of trying to replicate the lookup.
+
+# ── 6. Consumer queries / complaints ──────────────────────────────────────
+- url: "https://www.bis.gov.in/consumer-overview/consumer-protection/?lang=en"
+  type: html_page
+  category: consumer
+
+- url: "https://www.bis.gov.in/consumer-overview/for-consumers-faq/?lang=en"
+  type: html_page
+  category: consumer_faq
+
+- url: "https://www.bis.gov.in/consumer-overview/online-complaint-registration/?lang=en"
+  type: html_page
+  category: consumer   # explains: complaints go through BIS CARE app or manakonline.in
+                       # Standard Promotion Portal — point users there, don't try to build
+                       # your own complaint intake (that's a real BIS system of record)
+
+# ── 7. Training / Standards Clubs (mentioned in the background, lower priority) ──
+- url: "https://www.bis.gov.in/training-2/overview-of-nits/?lang=en"
+  type: html_page
+  category: training
+
+- url: "https://www.bis.gov.in/training-2/training-faq/?lang=en"
+  type: html_page
+  category: training_faq
+
+# ── 8. Indian Standards full text ──────────────────────────────────────────
+# Deliberately NOT listed here — see README "Known gaps" section. Full standard PDFs
+# require an authenticated, watermarked download from standardsbis.bsbedge.com and are
+# not a plain-URL scrape target. Curate a manual set instead (see manual_standards/ below).
