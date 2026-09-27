@@ -44,8 +44,13 @@ COPY --chown=appuser:appgroup src/ ./src/
 COPY --chown=appuser:appgroup static/ ./static/
 COPY --chown=appuser:appgroup scripts/ ./scripts/
 COPY --chown=appuser:appgroup tests/ ./tests/
+COPY --chown=appuser:appgroup processed_chunks.jsonl .
+COPY --chown=appuser:appgroup vector_index/bm25_index.pkl ./vector_index/bm25_index.pkl
 COPY --chown=appuser:appgroup .env.example .
 COPY --chown=appuser:appgroup README.md .
+
+# Ensure appuser owns /app directory for SQLite feedback logs and runtime files
+RUN chown -R appuser:appgroup /app
 
 # Switch to non-root user
 USER appuser

@@ -51,9 +51,10 @@ bis_data/
 *.pdf
 **/*.pdf
 
-# Generated Chunk Corpus — NEVER copy into image
+# Generated Chunk Corpus — Keep authoritative processed_chunks.jsonl
 processed_chunks.jsonl
 **/processed_chunks.jsonl
+!processed_chunks.jsonl
 processed_chunks_legacy_backup.jsonl
 **/processed_chunks_legacy_backup.jsonl
 classified_data/
@@ -72,6 +73,7 @@ classified_data/
 **/*.index
 vector_index/
 **/vector_index/
+!vector_index/bm25_index.pkl
 
 # Ingestion & Migration Checkpoints and Logs
 *checkpoint*.json
