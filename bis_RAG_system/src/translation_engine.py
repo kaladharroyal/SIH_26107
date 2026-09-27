@@ -5,7 +5,7 @@ Masks citations, URLs, and fee figures before translation and restores them byte
 
 import re
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("translation_engine")
@@ -33,13 +33,13 @@ HINDI_DICTIONARY = {
 
 class TranslationEngine:
     def __init__(self):
-        # Regex patterns to preserve as untranslatable tokens
+        # Regex patterns to preserve as untranslatable tokens (IS numbers, clauses, citations, URLs, hashes, chunk IDs)
         self.citation_pattern = re.compile(
-            r"(\[As per IS [^\]]+\]|\[Per BIS FAQ [^\]]+\]|\(file:///[^\)]+\)|\(https?://[^\)]+\)|₹\d+[\d,]*|\bIS\s*\d+(?:\s*\(Part\s*\d+\))?:\d{4}\b|\bClause\s*[\d\.]+\b)",
+            r"(\[As per [^\]]+\]|\[Per BIS [^\]]+\]|\[[^\]]*IS\s*\d+[^\]]*\]|\(file:///[^\)]+\)|\(https?://[^\)]+\)|https?://\S+|₹\d+[\d,]*|\bIS\s*\d+(?:\s*\(Part\s*\d+\))?(?::\d{4})?\b|\bClause\s*[\d\.]+\b|\bchunk_[a-zA-Z0-9_\-]+\b|\b[a-f0-9]{64}\b|\b[a-zA-Z0-9_\-]+\.pdf\b)",
             re.IGNORECASE,
         )
 
-    def mask_protected_tokens(self, text: str) -> (str, List[str]):
+    def mask_protected_tokens(self, text: str) -> Tuple[str, List[str]]:
         tokens = []
 
         def replacer(match):

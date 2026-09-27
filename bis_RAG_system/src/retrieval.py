@@ -11,6 +11,7 @@ Combines:
 """
 
 import argparse
+import hashlib
 import json
 import logging
 import math
@@ -152,7 +153,7 @@ class BM25Index:
             })
         return results
 
-    def save(self, filepath: Union[str, Path]):
+    def save(self, filepath: Union[str, Path], corpus_hash: Optional[str] = None):
         """Serializes BM25 index data to disk."""
         path = Path(filepath)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -167,6 +168,7 @@ class BM25Index:
             "doc_freqs": self.doc_freqs,
             "doc_categories": self.doc_categories,
             "doc_ids": self.doc_ids,
+            "corpus_hash": corpus_hash or getattr(self, "corpus_hash", None),
         }
         with open(path, "wb") as f:
             pickle.dump(state, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -189,6 +191,7 @@ class BM25Index:
         idx.doc_freqs = state["doc_freqs"]
         idx.doc_categories = state["doc_categories"]
         idx.doc_ids = state["doc_ids"]
+        idx.corpus_hash = state.get("corpus_hash", None)
         log.info(f"Loaded BM25 index with {idx.n_docs} documents from {path}")
         return idx
 
@@ -208,9 +211,9 @@ class MockEmbeddingModel:
 
         vectors = []
         for t in text_list:
-            # Deterministic pseudo-random vector seeded by text hash
-            h = hash(t)
-            rng = np.random.RandomState(abs(h) % (2**31 - 1))
+            # Deterministic pseudo-random vector seeded by text MD5 hash
+            h_int = int(hashlib.md5(t.encode("utf-8", errors="ignore")).hexdigest()[:8], 16)
+            rng = np.random.RandomState(h_int % (2**31 - 1))
             vec = rng.randn(self.dim).astype(np.float32)
             if normalize_embeddings:
                 norm = np.linalg.norm(vec)
@@ -294,7 +297,12 @@ class DenseVectorStore:
             })
         return results
 
-    def save(self, output_dir: Union[str, Path]):
+    def save(
+        self,
+        output_dir: Union[str, Path],
+        corpus_hash: Optional[str] = None,
+        model_name: Optional[str] = None,
+    ):
         """Saves matrix and metadata to disk."""
         out_path = Path(output_dir)
         out_path.mkdir(parents=True, exist_ok=True)
@@ -306,6 +314,10 @@ class DenseVectorStore:
             "count": len(self.chunk_ids),
             "dim": int(self.embeddings.shape[1]) if self.embeddings is not None else 0,
             "chunk_ids": self.chunk_ids,
+            "corpus_hash": corpus_hash or getattr(self, "corpus_hash", None),
+            "model_name": model_name or getattr(self, "model_name", "BAAI/bge-m3"),
+            "dtype": str(self.embeddings.dtype) if self.embeddings is not None else "float32",
+            "normalized": True,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         with open(out_path / "vector_metadata.json", "w", encoding="utf-8") as f:
@@ -341,7 +353,10 @@ class DenseVectorStore:
 
         chunk_ids = meta.get("chunk_ids", [d.get("chunk_id", "") for d in documents])
         log.info(f"Loaded DenseVectorStore with {len(chunk_ids)} embeddings of dim {embeddings.shape[1]} from {path}")
-        return cls(embeddings=embeddings, chunk_ids=chunk_ids, documents=documents)
+        store = cls(embeddings=embeddings, chunk_ids=chunk_ids, documents=documents)
+        store.corpus_hash = meta.get("corpus_hash", None)
+        store.model_name = meta.get("model_name", "BAAI/bge-m3")
+        return store
 
 
 class HybridRetrievalPipeline:
@@ -369,7 +384,19 @@ class HybridRetrievalPipeline:
         self._load_or_init_pipeline()
 
     def _load_or_init_pipeline(self):
-        """Loads chunks, BM25 index, vector store, and neural models."""
+        """Loads chunks, BM25 index, vector store, and neural models.
+
+        F1 — DENSE INDEX STATE (intentionally deferred):
+        Production retrieval runs in BM25-only mode (use_fast_retrieval=True in rag_pipeline.py).
+        The full 39,082-chunk BGE-M3 dense embedding build was stopped because CPU-only
+        inference is impractical for the full corpus.  The 512-chunk checkpoint at
+        vector_index/embeddings_partial.npy is INCOMPLETE and must not be used as production.
+        The 500-chunk validation index at vector_index/validation_500/ is a validation
+        artifact only and must remain isolated.  Full dense hybrid retrieval (use_fast_retrieval=False)
+        is available in the code and can be enabled once a suitable compute environment exists.
+        """
+        self.degraded_mode: bool = False  # F6: set True when corpus is missing
+
         # 1. Load Chunks
         if self.chunks_path.exists():
             with open(self.chunks_path, "r", encoding="utf-8") as f:
@@ -378,7 +405,14 @@ class HybridRetrievalPipeline:
                         self.chunks.append(json.loads(line))
             log.info(f"Loaded {len(self.chunks)} verified chunks from {self.chunks_path}")
         else:
-            log.warning(f"Chunks file not found at {self.chunks_path}")
+            # F6: missing corpus is an operational error, not a recoverable warning
+            log.error(
+                f"CORPUS MISSING: Chunks file not found at {self.chunks_path}. "
+                "The retrieval pipeline is operating in DEGRADED MODE with an empty knowledge base. "
+                "All queries will be refused by the guardrail. "
+                "Ensure processed_chunks.jsonl is present before serving real queries."
+            )
+            self.degraded_mode = True
 
         # 2. Load or Build BM25 Index
         bm25_file = self.index_dir / "bm25_index.pkl"
@@ -411,6 +445,8 @@ class HybridRetrievalPipeline:
             from sentence_transformers import SentenceTransformer, CrossEncoder
             log.info("Loading BGE-M3 sentence transformer...")
             self.encoder = SentenceTransformer("BAAI/bge-m3")
+            if hasattr(self.encoder, "max_seq_length"):
+                self.encoder.max_seq_length = 1024
             log.info("Loading BGE-Reranker cross encoder...")
             self.reranker = CrossEncoder("BAAI/bge-reranker-v2-m3")
         except Exception as e:
@@ -661,7 +697,7 @@ class HybridRetrievalPipeline:
         cls,
         chunks_path: Path = DEFAULT_CHUNKS_PATH,
         index_dir: Path = DEFAULT_INDEX_DIR,
-        batch_size: int = 64,
+        batch_size: int = 16,
         use_mock: bool = False,
     ):
         """
@@ -675,6 +711,15 @@ class HybridRetrievalPipeline:
         if not chunks_file.exists():
             raise FileNotFoundError(f"Chunks file {chunks_file} not found")
 
+        # Calculate SHA-256 of chunks file for corpus identity
+        log.info(f"Computing corpus SHA-256 for {chunks_file}...")
+        hasher = hashlib.sha256()
+        with open(chunks_file, "rb") as cf:
+            while buf := cf.read(1024 * 1024):
+                hasher.update(buf)
+        corpus_hash = hasher.hexdigest()
+        log.info(f"Corpus SHA-256: {corpus_hash}")
+
         log.info(f"Loading chunks for indexing from {chunks_file}...")
         chunks: List[Dict[str, Any]] = []
         with open(chunks_file, "r", encoding="utf-8") as f:
@@ -686,20 +731,31 @@ class HybridRetrievalPipeline:
         log.info(f"Total chunks to index: {total_chunks}")
 
         # 1. Build and Save BM25 Index
-        log.info("Building BM25 index...")
-        bm25 = BM25Index(chunks)
-        bm25.save(out_dir / "bm25_index.pkl")
+        bm25_file = out_dir / "bm25_index.pkl"
+        bm25 = None
+        if bm25_file.exists():
+            try:
+                loaded_bm25 = BM25Index.load(bm25_file)
+                if getattr(loaded_bm25, "corpus_hash", None) == corpus_hash and loaded_bm25.n_docs == total_chunks:
+                    log.info(f"Existing verified BM25 index found ({loaded_bm25.n_docs} docs) matching corpus hash. Skipping rebuild.")
+                    bm25 = loaded_bm25
+            except Exception:
+                bm25 = None
+
+        if bm25 is None:
+            log.info("Building BM25 index...")
+            bm25 = BM25Index(chunks)
+            bm25.save(bm25_file, corpus_hash=corpus_hash)
 
         # 2. Build Dense Vectors
+        model_name = "mock" if use_mock else "BAAI/bge-m3"
         encoder = MockEmbeddingModel(dim=128) if use_mock else None
         if encoder is None:
-            try:
-                from sentence_transformers import SentenceTransformer
-                log.info("Loading BGE-M3 embedding model for indexing...")
-                encoder = SentenceTransformer("BAAI/bge-m3")
-            except Exception as e:
-                log.warning(f"Could not load BGE-M3 ({e}). Using MockEmbeddingModel.")
-                encoder = MockEmbeddingModel(dim=128)
+            from sentence_transformers import SentenceTransformer
+            log.info("Loading BGE-M3 embedding model for indexing...")
+            encoder = SentenceTransformer("BAAI/bge-m3")
+            if hasattr(encoder, "max_seq_length"):
+                encoder.max_seq_length = 1024
 
         # Check existing checkpoint
         start_idx = 0
@@ -708,32 +764,48 @@ class HybridRetrievalPipeline:
             try:
                 with open(checkpoint_file, "r", encoding="utf-8") as f:
                     cp = json.load(f)
-                start_idx = cp.get("processed_count", 0)
-                temp_npy = out_dir / "embeddings_partial.npy"
-                if temp_npy.exists() and start_idx > 0:
-                    existing_arr = np.load(str(temp_npy))
-                    if len(existing_arr) == start_idx:
-                        embeddings_list.append(existing_arr)
-                        log.info(f"Resuming indexing from checkpoint: {start_idx}/{total_chunks} chunks already processed.")
+                if cp.get("corpus_hash") and cp.get("corpus_hash") != corpus_hash:
+                    log.warning("Corpus hash mismatch in checkpoint. Starting from 0.")
+                    start_idx = 0
+                elif cp.get("model_name") and cp.get("model_name") != model_name:
+                    log.warning("Model mismatch in checkpoint. Starting from 0.")
+                    start_idx = 0
+                else:
+                    start_idx = cp.get("processed_count", 0)
+                    temp_npy = out_dir / "embeddings_partial.npy"
+                    if temp_npy.exists() and start_idx > 0:
+                        existing_arr = np.load(str(temp_npy))
+                        if len(existing_arr) == start_idx:
+                            embeddings_list.append(existing_arr)
+                            log.info(f"Resuming indexing from checkpoint: {start_idx}/{total_chunks} chunks already processed.")
             except Exception as e:
                 log.warning(f"Could not load checkpoint: {e}. Starting from 0.")
                 start_idx = 0
 
         # Encode in batches
         all_embeddings = list(embeddings_list)
+        last_checkpoint = start_idx
         for i in range(start_idx, total_chunks, batch_size):
             batch = chunks[i : i + batch_size]
-            texts = [b.get("text", "")[:500] for b in batch]
-            vecs = encoder.encode(texts, normalize_embeddings=True)
+            texts = [b.get("text", "") for b in batch]
+            vecs = encoder.encode(texts, normalize_embeddings=True, show_progress_bar=False)
             all_embeddings.append(np.array(vecs, dtype=np.float32))
 
             current_count = min(i + batch_size, total_chunks)
-            if current_count % 500 == 0 or current_count == total_chunks:
+            if current_count - last_checkpoint >= 500 or current_count == total_chunks:
                 # Save partial checkpoint
                 combined = np.vstack(all_embeddings)
                 np.save(str(out_dir / "embeddings_partial.npy"), combined)
+                last_checkpoint = current_count
                 with open(checkpoint_file, "w", encoding="utf-8") as f:
-                    json.dump({"processed_count": current_count, "total_count": total_chunks, "timestamp": datetime.now(timezone.utc).isoformat()}, f)
+                    json.dump({
+                        "processed_count": current_count,
+                        "total_count": total_chunks,
+                        "model_name": model_name,
+                        "dim": int(combined.shape[1]),
+                        "corpus_hash": corpus_hash,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }, f)
                 log.info(f"Indexed {current_count}/{total_chunks} chunks ({current_count/total_chunks*100:.1f}%)")
 
         final_matrix = np.vstack(all_embeddings)
@@ -742,7 +814,7 @@ class HybridRetrievalPipeline:
             chunk_ids=[c.get("chunk_id", f"c_{idx}") for idx, c in enumerate(chunks)],
             documents=chunks,
         )
-        vector_store.save(out_dir)
+        vector_store.save(out_dir, corpus_hash=corpus_hash, model_name=model_name)
 
         # Remove partial file on success
         if (out_dir / "embeddings_partial.npy").exists():
@@ -758,7 +830,7 @@ def main():
     parser.add_argument("--top_n", type=int, default=5, help="Number of results to return")
     parser.add_argument("--build-index", action="store_true", help="Build persistent indexes")
     parser.add_argument("--mock", action="store_true", help="Use mock embeddings for testing")
-    parser.add_argument("--batch-size", type=int, default=64, help="Batch size for vector indexing")
+    parser.add_argument("--batch-size", type=int, default=16, help="Batch size for vector indexing")
     parser.add_argument("--chunks", type=str, default=str(DEFAULT_CHUNKS_PATH), help="Path to chunks JSONL")
     parser.add_argument("--index-dir", type=str, default=str(DEFAULT_INDEX_DIR), help="Output index directory")
 

@@ -36,6 +36,9 @@ class CitationEngine:
         """
         Verifies that citations generated in the answer correspond directly
         to authentic chunks present in the retrieved candidate context.
+
+        F5: a citation must match a real IS number, clause, or chunk_id from the
+        retrieved context.  A bare BIS/FAQ keyword no longer qualifies by itself.
         """
         valid_citations = []
         ungrounded_citations = []
@@ -53,6 +56,12 @@ class CitationEngine:
 
             if is_no:
                 context_standards.add(is_no)
+
+            # Extract any authentic IS numbers directly present in retrieved chunk title or text
+            title_text = f"{doc.get('title') or doc.get('clause_title') or ''} {doc.get('text') or ''}"
+            for m in re.finditer(r"\bIS\s*(\d+)", title_text, re.IGNORECASE):
+                context_standards.add(f"is{m.group(1)}")
+
             if cl_no:
                 context_clauses.add(cl_no)
             if cid:
@@ -60,14 +69,14 @@ class CitationEngine:
 
         for cite in citations_emitted:
             cite_clean = cite.lower().replace(" ", "").replace("-", "").replace(":", "")
-            # Check standard match
+            # Must match a real IS number from the retrieved context
             is_match = any(std in cite_clean for std in context_standards if len(std) > 2)
-            # Check clause or FAQ match
+            # Clause match PLUS matching IS number
             clause_match = any(cl in cite.lower() for cl in context_clauses if len(cl) >= 1)
-            # Check general BIS match
-            general_match = "bis" in cite.lower() or "faq" in cite.lower() or "guideline" in cite.lower()
+            # F5: chunk_id match (e.g. MockOfflineProvider tags)
+            chunk_id_match = any(cid in cite_clean for cid in context_chunk_ids if len(cid) > 4)
 
-            if is_match or (clause_match and general_match) or (general_match and len(context_chunks) > 0):
+            if is_match or chunk_id_match or (is_match and clause_match):
                 valid_citations.append(cite)
             else:
                 ungrounded_citations.append(cite)

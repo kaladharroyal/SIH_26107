@@ -126,6 +126,14 @@ class ConsumerComplaintHandler:
             "compensation_rights": compensation_text,
             "how_to_file": how_to_file,
             "formatted_text": formatted,
+            "citations": [
+                {
+                    "label": "BIS CARE Consumer Grievance Portal",
+                    "url": OFFICIAL_COMPLAINT_URL,
+                    "source_of_truth": "official_bis_care_portal",
+                    "citation_type": "official_source",
+                }
+            ],
             "source": "official_bis_care_portal",
             "fallback_used": False,
         }

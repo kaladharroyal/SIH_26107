@@ -79,9 +79,11 @@ class TestPhase4SpecializedSubFlows(unittest.TestCase):
 
     def test_01_product_exact_matching(self):
         """Criterion 1: Product recommender exact match on Phase 1 authentic map."""
+        # Previously expected IS 1070 due to defective ingestor regex associating IS 1070 with reference IS 4905.
+        # Authentically, IS 4905:2015 is Random sampling and randomization procedures.
         res = self.recommender.recommend("Random sampling and randomization procedures")
         self.assertEqual(res["status"], "success")
-        self.assertIn("IS 1070", res["formatted_text"])
+        self.assertIn("IS 4905", res["formatted_text"])
         self.assertFalse(res["fallback_used"])
         print("✅ Test 1 Passed: Product exact match verified.")
 
@@ -104,7 +106,10 @@ class TestPhase4SpecializedSubFlows(unittest.TestCase):
 
     def test_04_product_corpus_fallback(self):
         """Criterion 4: Product recommender falls back to corpus search when static map misses."""
-        res = self.recommender_with_fallback.recommend("TMT bar reinforcement steel")
+        # In remediated production, IS 1786 is authentically present in product_standard_map.json.
+        # To test the fallback path when a static map misses, instantiate with an empty map.
+        recommender_fallback_only = ProductRecommender(map_path=Path("empty_map.json"), retrieval_pipeline=MockRetrievalFallback())
+        res = recommender_fallback_only.recommend("TMT bar reinforcement steel")
         self.assertEqual(res["status"], "success")
         self.assertTrue(res["fallback_used"])
         self.assertIn("IS 1786", res["formatted_text"])

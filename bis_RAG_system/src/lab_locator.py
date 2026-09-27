@@ -54,7 +54,7 @@ class LabLocator:
             log.error(f"Error loading labs directory: {e}")
             return []
 
-    def search_labs(self, query: str, state: Optional[str] = None) -> Dict[str, Any]:
+    def search_labs(self, query: str, state: Optional[str] = None, language: str = "English") -> Dict[str, Any]:
         """
         Searches and filters testing laboratories by state, name, or standard scope.
         If static dataset is empty/unavailable, falls back to corpus search or official LIMS portal.
@@ -70,7 +70,7 @@ class LabLocator:
                     state_filter = s_name
                     break
 
-        log.info(f"Executing Lab Locator -> Query: '{q_clean}' | State Filter: {state_filter}")
+        log.info(f"Executing Lab Locator -> Query: '{q_clean}' | State Filter: {state_filter} | Lang: '{language}'")
 
         # 1. Search in Static Dataset if records are available
         if self.labs and self.status == "available":
@@ -118,6 +118,14 @@ class LabLocator:
                     "labs": top_matches,
                     "formatted_text": formatted,
                     "source": "labs_directory_json",
+                    "citations": [
+                        {
+                            "label": "BIS Recognized Testing Laboratory Directory",
+                            "url": OFFICIAL_LIMS_PORTAL,
+                            "source_of_truth": "labs_directory_json",
+                            "citation_type": "official_source",
+                        }
+                    ],
                     "fallback_used": False,
                 }
 
@@ -125,14 +133,25 @@ class LabLocator:
         if self.retrieval is not None:
             log.info("Static lab directory is empty/unavailable. Querying corpus 'lab_directory' chunks...")
             try:
-                corpus_hits = self.retrieval.retrieve(q_clean or "laboratory testing facility", top_n=3, category="lab_directory")
+                if hasattr(self.retrieval, "retrieve_fast"):
+                    corpus_hits = self.retrieval.retrieve_fast(q_clean or "laboratory testing facility", top_n=3, category="lab_directory")
+                else:
+                    corpus_hits = self.retrieval.retrieve(q_clean or "laboratory testing facility", top_n=3, category="lab_directory")
                 if corpus_hits:
                     formatted_corpus = "### 🧪 BIS Testing Laboratory & Facility Guidance (Corpus Search)\n\n"
+                    citations_list = []
                     for idx, hit in enumerate(corpus_hits, 1):
                         doc = hit.get("doc", hit)
                         title = doc.get("clause_title") or doc.get("title") or "Testing Guidelines"
                         text_snippet = doc.get("text", "")[:250].strip()
                         formatted_corpus += f"**{idx}. {title}**\n{text_snippet}...\n\n"
+                        citations_list.append({
+                            "label": title,
+                            "url": doc.get("source_url") or OFFICIAL_LIMS_PORTAL,
+                            "source_of_truth": doc.get("source_of_truth", "verified_bis_pdf"),
+                            "citation_type": "corpus_record",
+                            "chunk_id": doc.get("chunk_id", ""),
+                        })
 
                     formatted_corpus += (
                         f"🔗 For real-time, state-wise accredited lab listings and live testing scopes:\n"
@@ -147,22 +166,47 @@ class LabLocator:
                         "labs": [h.get("doc", h) for h in corpus_hits],
                         "formatted_text": formatted_corpus,
                         "source": "corpus_lab_directory",
+                        "citations": citations_list,
                         "fallback_used": True,
                     }
             except Exception as e:
                 log.warning(f"Lab corpus search fallback failed: {e}")
 
         # 3. Default structured redirection when no static/corpus lab records are found
-        fallback_msg = (
-            "### 🧪 BIS Testing Laboratory Search\n\n"
-            "Official testing laboratories for Indian Standards compliance are managed dynamically through the "
-            "BIS Laboratory Information Management System (LIMS).\n\n"
-            "#### 🔍 How to Find an Accredited Testing Lab:\n"
-            "1. Visit the official **BIS LIMS Portal**.\n"
-            "2. Filter by your **State / City** and applicable **Indian Standard (IS Number)**.\n"
-            "3. View recognized, empaneled, and government testing laboratory scopes.\n\n"
-            f"🔗 [Official BIS LIMS Portal]({OFFICIAL_LIMS_PORTAL})\n"
-        )
+        lang_lower = (language or "english").lower()
+        if "hindi" in lang_lower or lang_lower == "hi":
+            fallback_msg = (
+                "### 🧪 बीआईएस एलआईएमएस प्रयोगशाला खोज (BIS LIMS Discovery)\n\n"
+                "भारतीय मानक अनुपालन हेतु आधिकारिक परीक्षण प्रयोगशालाएं बीआईएस प्रयोगशाला सूचना प्रबंधन प्रणाली (LIMS) के माध्यम से गतिशील रूप से प्रबंधित की जाती हैं। वर्तमान में अप्रचलित डेटा से बचने के लिए ऑफ़लाइन कॉर्पस में स्थानीय रिकॉर्ड संग्रहीत नहीं हैं।\n\n"
+                "#### 🔍 अधिकृत प्रयोगशाला खोज प्रक्रिया:\n"
+                "1. आधिकारिक **BIS LIMS पोर्टल** पर जाएं।\n"
+                "2. अपने **राज्य / शहर** और लागू **भारतीय मानक (IS संख्या)** द्वारा फ़िल्टर करें।\n"
+                "3. वर्तमान में मान्यता प्राप्त एवं पैनलबद्ध परीक्षण प्रयोगशालाओं के परीक्षण कार्यक्षेत्र (Test Scope) की जांच करें।\n\n"
+                f"🔗 [आधिकारिक BIS LIMS पोर्टल]({OFFICIAL_LIMS_PORTAL})\n"
+            )
+        elif "telugu" in lang_lower or lang_lower == "te":
+            fallback_msg = (
+                "### 🧪 BIS LIMS ప్రయోగశాల గుర్తింపు (BIS LIMS Discovery)\n\n"
+                "భారతీయ ప్రమాణాల అనుగుణ్యత కోసం అధికారిక పరీక్షా ప్రయోగశాలలు BIS ప్రయోగశాల సమాచార నిర్వహణ వ్యవస్థ (LIMS) ద్వారా నిర్వహించబడతాయి. పాతబడిపోయిన సమాచారాన్ని నివారించడానికి ఆఫ్‌లైన్ కార్పస్‌లో స్థానిక రికార్డులు నిల్వ చేయబడవు.\n\n"
+                "#### 🔍 అధీకృత ప్రయోగశాల గుర్తింపు విధానం:\n"
+                "1. అధికారిక **BIS LIMS పోర్టల్** ని సందర్శించండి.\n"
+                "2. మీ **రాష్ట్రం / నగరం** మరియు వర్తించే **భారతీయ ప్రమాణం (IS సంఖ్య)** ద్వారా ఫిల్టర్ చేయండి.\n"
+                "3. ప్రస్తుత గుర్తింపు పొందిన పరీక్షా ప్రయోగశాలల పరిధిని తనిఖీ చేయండి.\n\n"
+                f"🔗 [అధికారిక BIS LIMS పోర్టల్]({OFFICIAL_LIMS_PORTAL})\n"
+            )
+        else:
+            fallback_msg = (
+                "### 🧪 BIS LIMS Laboratory Discovery\n\n"
+                "Official testing laboratories for Indian Standards compliance are managed dynamically through the "
+                "BIS Laboratory Information Management System (LIMS). Local verified laboratory records are not stored "
+                "in the offline corpus to prevent outdated empanelment data.\n\n"
+                "#### 🔍 Authoritative Laboratory Discovery:\n"
+                "1. Visit the official **BIS LIMS Portal**.\n"
+                "2. Filter by your **State / City** and applicable **Indian Standard (IS Number)**.\n"
+                "3. View currently empaneled, recognized, and government testing laboratory scopes.\n\n"
+                f"🔗 [Official BIS LIMS Portal]({OFFICIAL_LIMS_PORTAL})\n"
+            )
+
         return {
             "intent": "lab_location",
             "flow": "lab_locator",
@@ -171,6 +215,14 @@ class LabLocator:
             "labs": [],
             "formatted_text": fallback_msg,
             "source": "official_lims_fallback",
+            "citations": [
+                {
+                    "label": "Official BIS Laboratory Information Management System (LIMS)",
+                    "url": OFFICIAL_LIMS_PORTAL,
+                    "source_of_truth": "official_lims_portal",
+                    "citation_type": "official_source",
+                }
+            ],
             "fallback_used": True,
         }
 

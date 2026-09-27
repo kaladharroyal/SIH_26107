@@ -106,9 +106,9 @@ class SchemeWalkthroughGuide:
     Provides structured step-by-step guidance for official BIS certification schemes.
     """
 
-    def get_walkthrough(self, query: str) -> Dict[str, Any]:
+    def get_walkthrough(self, query: str, language: str = "English") -> Dict[str, Any]:
         q_lower = query.lower() if query else ""
-        log.info(f"Executing Scheme Walkthrough Guide for query: '{query}'")
+        log.info(f"Executing Scheme Walkthrough Guide for query: '{query}' | Lang: '{language}'")
 
         if "crs" in q_lower or "scheme-ii" in q_lower or "scheme 2" in q_lower or "electronic" in q_lower:
             scheme_key = "scheme_ii"
@@ -124,21 +124,74 @@ class SchemeWalkthroughGuide:
 
         data = SCHEME_WALKTHROUGHS[scheme_key]
 
-        # Format Markdown Output
-        formatted = (
-            f"### 📋 Official Step-by-Step Walkthrough: {data['title']}\n\n"
-            f"**Target Audience**: {data['target_audience']}\n\n"
-            f"#### 💰 Official Fee Schedule & Timelines:\n"
-        )
-        for fee_key, fee_val in data["fee_schedule"].items():
-            readable_key = fee_key.replace("_", " ").title()
-            formatted += f"- **{readable_key}**: {fee_val}\n"
+        # Format Markdown Output with multilingual localization
+        lang_lower = (language or "english").lower()
+        if "hindi" in lang_lower or lang_lower == "hi":
+            formatted = (
+                f"### 📋 आधिकारिक चरण-दर-चरण मार्गदर्शन: {data['title']}\n\n"
+                f"**लक्षित आवेदक**: {data['target_audience']}\n\n"
+                f"#### 💰 आधिकारिक शुल्क और अवधि तालिका:\n"
+            )
+            HINDI_FEE_KEYS = {
+                "application_fee": "आवेदन शुल्क",
+                "inspection_charge": "कारखाना निरीक्षण शुल्क",
+                "test_report_validity": "प्रयोगशाला परीक्षण रिपोर्ट की वैधता",
+                "license_duration": "लाइसेंस अवधि",
+                "performance_bank_guarantee": "प्रदर्शन बैंक गारंटी (PBG)",
+                "testing_basis": "परीक्षण आधार",
+                "jeweller_registration": "ज्वैलर पंजीकरण शुल्क",
+                "hallmarking_charge": "हॉलमार्किंग शुल्क",
+                "huid_system": "एचयूआईडी प्रणाली",
+                "registration_validity": "पंजीकरण वैधता",
+            }
+            for fee_key, fee_val in data["fee_schedule"].items():
+                fee_name = HINDI_FEE_KEYS.get(fee_key, fee_key.replace("_", " ").title())
+                formatted += f"- **{fee_name}**: {fee_val}\n"
 
-        formatted += "\n#### 🚀 Step-by-Step Certification Procedure:\n"
-        for step in data["steps"]:
-            formatted += f"{step}\n"
+            formatted += "\n#### 🚀 चरण-दर-चरण लाइसेंसिंग प्रक्रिया:\n"
+            for step in data["steps"]:
+                formatted += f"{step}\n"
 
-        formatted += f"\n🔗 [Official BIS Portal Guide]({data['official_url']})\n"
+            formatted += f"\n🔗 [आधिकारिक बीआईएस पोर्टल लिंक]({data['official_url']})\n"
+        elif "telugu" in lang_lower or lang_lower == "te":
+            formatted = (
+                f"### 📋 అధికారిక దశలవారీ మార్గదర్శకత్వం: {data['title']}\n\n"
+                f"**లక్ష్య వర్గం**: {data['target_audience']}\n\n"
+                f"#### 💰 అధికారిక ఫీజుల వివరాలు:\n"
+            )
+            for fee_key, fee_val in data["fee_schedule"].items():
+                readable_key = fee_key.replace("_", " ").title()
+                formatted += f"- **{readable_key}**: {fee_val}\n"
+
+            formatted += "\n#### 🚀 దశలవారీ ధృవీకరణ విధానం:\n"
+            for step in data["steps"]:
+                formatted += f"{step}\n"
+
+            formatted += f"\n🔗 [అధికారిక BIS పోర్టల్ గైడ్]({data['official_url']})\n"
+        else:
+            formatted = (
+                f"### 📋 Official Step-by-Step Walkthrough: {data['title']}\n\n"
+                f"**Target Audience**: {data['target_audience']}\n\n"
+                f"#### 💰 Official Fee Schedule & Timelines:\n"
+            )
+            for fee_key, fee_val in data["fee_schedule"].items():
+                readable_key = fee_key.replace("_", " ").title()
+                formatted += f"- **{readable_key}**: {fee_val}\n"
+
+            formatted += "\n#### 🚀 Step-by-Step Certification Procedure:\n"
+            for step in data["steps"]:
+                formatted += f"{step}\n"
+
+            formatted += f"\n🔗 [Official BIS Portal Guide]({data['official_url']})\n"
+
+        citations = [
+            {
+                "label": f"Official Step-by-Step Walkthrough: {data['title']}",
+                "url": data["official_url"],
+                "source_of_truth": "official_scheme_walkthrough",
+                "citation_type": "official_source",
+            }
+        ]
 
         return {
             "intent": "certification_process",
@@ -149,6 +202,7 @@ class SchemeWalkthroughGuide:
             "fee_schedule": data["fee_schedule"],
             "steps": data["steps"],
             "formatted_text": formatted,
+            "citations": citations,
             "source": "official_scheme_walkthrough",
             "fallback_used": False,
         }

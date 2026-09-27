@@ -3,6 +3,7 @@ PDF Document Ingestor - Phase 1 Data Foundation (pdf_ingestor.py)
 Extracts clause-level chunks from standard PDFs, QCO orders, and administrative publications using pypdf.
 """
 
+import hashlib
 import logging
 import re
 from pathlib import Path
@@ -38,7 +39,9 @@ ADMIN_PATTERNS = [
 ]
 
 
-def extract_standard_identity(pdf_path: Path, first_page_text: str) -> Tuple[Optional[str], Optional[str], Optional[str], str, str]:
+def extract_standard_identity(
+    pdf_path: Path, first_page_text: str, manifest_entry: Optional[Dict[str, Any]] = None
+) -> Tuple[Optional[str], Optional[str], Optional[str], str, str]:
     """
     Identifies whether the PDF is a technical IS standard or an administrative non-standard publication.
     Returns: (is_number, part, revision_year, identity_status, identity_reason)
@@ -50,13 +53,21 @@ def extract_standard_identity(pdf_path: Path, first_page_text: str) -> Tuple[Opt
         if re.search(admin_pat, name_lower):
             return None, None, None, "non_standard", "BIS Annual Report / Administrative Notice - not an Indian Standard"
 
-    # Search for standard identifier in filename and first page
-    for text_source in (pdf_path.stem, first_page_text[:1000]):
+    # Search for standard identifier in manifest metadata, filename stem, and first page text
+    sources_to_check: List[str] = []
+    if manifest_entry:
+        if manifest_entry.get("standard_number"):
+            sources_to_check.append(str(manifest_entry["standard_number"]))
+        if manifest_entry.get("title"):
+            sources_to_check.append(str(manifest_entry["title"]))
+    sources_to_check.extend([pdf_path.stem, first_page_text[:1000]])
+
+    for text_source in sources_to_check:
         match = STANDARD_ID_RE.search(text_source)
         if match:
             num, part, year = match.groups()
             is_no = f"IS {num}"
-            return is_no, part, year, "verified", f"Standard {is_no} identified from PDF header/filename"
+            return is_no, part, year, "verified", f"Standard {is_no} identified from PDF header/filename/manifest"
 
     return None, None, None, "unknown", "No technical Indian Standard number found in document cover"
 
@@ -69,9 +80,24 @@ class PDFIngestor:
         self, pdf_path: Path, manifest_entry: Optional[Dict[str, Any]] = None
     ) -> List[ChunkRecord]:
         chunks: List[ChunkRecord] = []
-        source_url = manifest_entry.get("source_url") if manifest_entry else f"file:///{pdf_path.name}"
-        source_hash = manifest_entry.get("content_hash") if manifest_entry else f"hash_{pdf_path.stem[:12]}"
-        manifest_cat = manifest_entry.get("category") if manifest_entry else "other"
+        source_url = (manifest_entry.get("source_url") if manifest_entry else None) or f"file:///{pdf_path.name}"
+        source_hash = (
+            manifest_entry.get("expected_sha256")
+            or manifest_entry.get("content_hash")
+            or manifest_entry.get("source_hash")
+        ) if manifest_entry else None
+
+        if not source_hash and pdf_path.exists():
+            try:
+                source_hash = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
+            except Exception:
+                source_hash = f"hash_{pdf_path.stem[:12]}"
+        elif not source_hash:
+            source_hash = f"missing_{pdf_path.stem[:12]}"
+
+        doc_id = manifest_entry.get("document_id") if manifest_entry else None
+        rec_id = manifest_entry.get("record_id") if manifest_entry else None
+        manifest_cat = (manifest_entry.get("category") or manifest_entry.get("domain") or "other") if manifest_entry else "other"
 
         try:
             reader = PdfReader(str(pdf_path))
@@ -82,18 +108,20 @@ class PDFIngestor:
                 return []
 
             first_page_text = reader.pages[0].extract_text() or ""
-            is_no, part, year, ident_status, ident_reason = extract_standard_identity(pdf_path, first_page_text)
+            is_no, part, year, ident_status, ident_reason = extract_standard_identity(pdf_path, first_page_text, manifest_entry)
 
             # Determine controlled category
             if ident_status == "non_standard":
                 category = "annual_report" if "annual" in pdf_path.name.lower() else "general_policy"
-            elif "qco" in pdf_path.name.lower() or manifest_cat == "crs_qco":
+            elif "qco" in pdf_path.name.lower() or manifest_cat in ["crs_qco", "qco_order"]:
                 category = "qco_order"
             elif manifest_cat in ["hallmarking", "hallmarking_faq"]:
                 category = "hallmarking"
             elif manifest_cat in ["lab_directory", "lab_faq"]:
                 category = "lab_directory"
             elif is_no:
+                category = "is_standard"
+            elif manifest_entry and manifest_entry.get("classification") == "PDF_STANDARD":
                 category = "is_standard"
             else:
                 category = manifest_cat if manifest_cat in ["is_standard", "qco_order", "certification", "hallmarking", "general_policy"] else "general_policy"
@@ -106,7 +134,7 @@ class PDFIngestor:
                 if current_lines:
                     full_text = "\n".join(current_lines).strip()
                     if len(full_text) >= 15:
-                        clause_id = f"{is_no or 'DOC'}_C{current_header[0]}_P{current_page_start}"
+                        clause_id = f"{is_no or doc_id or 'DOC'}_C{current_header[0]}_P{current_page_start}"
                         chunk_id = generate_canonical_chunk_id(source_hash, clause_id, full_text)
                         src_file_rel = f"raw_data/pdfs/{pdf_path.name}" if pdf_path.parent.name == "pdfs" else f"raw_data/{pdf_path.name}"
                         record = ChunkRecord(
@@ -126,6 +154,8 @@ class PDFIngestor:
                             page_range=f"{current_page_start}-{end_page}",
                             source_hash=source_hash,
                             source_of_truth="verified_bis_pdf",
+                            document_id=doc_id,
+                            record_id=rec_id,
                         )
                         if self.validator.validate_chunk(record):
                             chunks.append(record)

@@ -9,14 +9,20 @@ import sys
 from pathlib import Path
 import unittest
 
-# Ensure src and ingestion in sys.path
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
+# Ensure src, ingestion, and tests in sys.path
 root_dir = Path(__file__).resolve().parent.parent
 src_dir = root_dir / "src"
 ingest_dir = src_dir / "ingestion"
+tests_dir = root_dir / "tests"
 if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 if str(ingest_dir) not in sys.path:
     sys.path.insert(0, str(ingest_dir))
+if str(tests_dir) not in sys.path:
+    sys.path.insert(0, str(tests_dir))
 
 from metadata import (
     ALLOWED_CATEGORIES,

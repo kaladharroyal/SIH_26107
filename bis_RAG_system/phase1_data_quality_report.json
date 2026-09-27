@@ -1,58 +1,47 @@
 {
-  "timestamp": "2026-08-28T18:38:04.151207+00:00",
-  "dataset_name": "PHASE1_FULL_PDF_CORPUS",
-  "dataset_scope": "Full Physical PDF Corpus (raw_data/pdfs/)",
-  "runtime_seconds": 2349.1,
+  "timestamp": "2026-09-25T15:43:18.316480+00:00",
+  "dataset_name": "PHASE2_CANONICAL_CORPUS",
+  "dataset_scope": "Authoritative Canonical BIS Corpus (recovery_manifest.jsonl)",
+  "runtime_seconds": 7474.86,
   "raw_records": {
-    "discovered": 1791,
-    "processed": 1356,
-    "quarantined": 123,
-    "explicitly_skipped": 312,
-    "reconciliation_equation": "1791 == 1356 + 123 + 312",
+    "discovered": 1436,
+    "processed": 1436,
+    "quarantined": 0,
+    "explicitly_skipped": 0,
+    "reconciliation_equation": "1436 == 1436 + 0 + 0",
     "reconciliation_valid": true
   },
-  "logical_source_records": {
-    "discovered": 1791,
-    "processed": 1356,
-    "quarantined": 123,
-    "explicitly_skipped": 312,
-    "reconciliation_equation": "1791 == 1356 + 123 + 312",
-    "reconciliation_valid": true
-  },
-  "pdf_records": {
-    "discovered": 1791,
-    "processed": 1356,
-    "quarantined": 123,
-    "explicitly_skipped": 312,
-    "reconciliation_equation": "1791 == 1356 + 123 + 312",
-    "reconciliation_valid": true
-  },
-  "pdf_file_accounting": {
-    "discovered_pdf_files": 1791,
-    "processed_pdf_files": 1356,
-    "quarantined_pdf_files": 123,
-    "skipped_pdf_files": 312,
-    "reconciliation_equation": "1791 == 1356 + 123 + 312",
-    "reconciliation_valid": true
+  "canonical_reconciliation": {
+    "canonical_records": 1436,
+    "processed": 1436,
+    "failed": 0,
+    "skipped": 0,
+    "unresolved": 0,
+    "reconciliation_formula": "1436 + 0 + 0 + 0 == 1436",
+    "reconciliation_valid": true,
+    "documents_with_chunks": 1179,
+    "documents_without_chunks": 257,
+    "failed_records_detail": [],
+    "unresolved_records_detail": []
   },
   "chunk_accounting": {
-    "total_raw_chunks": 51358,
-    "unique_chunks": 41476,
-    "duplicates_eliminated": 9882,
-    "reconciliation_equation": "51358 == 41476 + 9882",
+    "total_raw_chunks": 39278,
+    "unique_chunks": 39082,
+    "duplicates_eliminated": 196,
+    "reconciliation_equation": "39278 == 39082 + 196",
     "reconciliation_valid": true
   },
   "metadata_integrity": {
-    "verified_is_standards": 7628,
-    "non_standard_policy_chunks": 2175,
-    "unknown_identity_chunks": 31673,
+    "verified_is_standards": 7436,
+    "non_standard_policy_chunks": 729,
+    "unknown_identity_chunks": 30917,
     "category_distribution": {
-      "general_policy": 30550,
-      "qco_order": 1250,
-      "is_standard": 7460,
-      "lab_directory": 1134,
-      "annual_report": 1082
+      "is_standard": 18184,
+      "general_policy": 18484,
+      "qco_order": 1178,
+      "certification": 702,
+      "hallmarking": 534
     }
   },
-  "corpus_hash": "b8b770374ebae070d19c6a0f488d05b42405ec30850525e07549eba72808baf9"
+  "corpus_hash": "36fffe44a8c1555f228b698d7059c46db5614a65ef2e0db215387bec72a2a890"
 }

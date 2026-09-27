@@ -4,11 +4,16 @@ FastAPI server connecting the Unified BIS RAG Pipeline to an interactive browser
 Provides REST endpoints for Chat, Product Recommendation, Lab Locator, Scheme Walkthrough, and Feedback.
 """
 
+import asyncio
+from collections import defaultdict
 import logging
 import os
-import sys
 from pathlib import Path
+import re
+import sys
+import time
 from typing import Any, Dict, Optional
+import uuid
 
 # Add src, tests, and root to python path for modular imports
 BASE_DIR = Path(__file__).resolve().parent
@@ -23,6 +28,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
+from feedback_logger import FeedbackLogger
 from rag_pipeline import BISRAGPipeline
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -30,27 +36,64 @@ log = logging.getLogger("bis_web_app")
 
 app = FastAPI(title="Bureau of Indian Standards (BIS) AI Assistant", version="2.0.0")
 
-# Enable CORS for local development
+# F6: Configurable CORS
+cors_env = os.getenv("CORS_ALLOW_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000")
+if cors_env.strip() == "*":
+    allowed_origins = ["*"]
+else:
+    allowed_origins = [o.strip() for o in cors_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-import asyncio
-import time
+# F6: Production default is 0.0 seconds (no artificial delay)
+DEMO_MIN_RESPONSE_SECONDS = float(os.getenv("DEMO_MIN_RESPONSE_SECONDS", "0.0"))
 
-DEMO_MIN_RESPONSE_SECONDS = float(os.getenv("DEMO_MIN_RESPONSE_SECONDS", "10.0"))
+# F6: In-process rate limiting (default 60 req/min per IP, set <= 0 to disable)
+RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
+_ip_request_timestamps: Dict[str, list] = defaultdict(list)
+_rate_limit_lock = asyncio.Lock()
+
+
+@app.middleware("http")
+async def request_observability_and_rate_limit_middleware(request: Request, call_next):
+    # F5: Generate or propagate safe Request ID
+    req_id_raw = request.headers.get("X-Request-ID", "").strip()
+    if req_id_raw and re.match(r"^[a-zA-Z0-9_\-]{1,64}$", req_id_raw):
+        req_id = req_id_raw
+    else:
+        req_id = uuid.uuid4().hex
+    request.state.request_id = req_id
+
+    # F6: In-process rate limiting (skip /health, /, and static docs)
+    if RATE_LIMIT_PER_MINUTE > 0 and request.url.path not in ["/health", "/"]:
+        client_ip = request.client.host if request.client else "127.0.0.1"
+        now = time.time()
+        async with _rate_limit_lock:
+            timestamps = [t for t in _ip_request_timestamps[client_ip] if now - t < 60.0]
+            if len(timestamps) >= RATE_LIMIT_PER_MINUTE:
+                _ip_request_timestamps[client_ip] = timestamps
+                log.warning(f"[{req_id}] Rate limit exceeded for IP {client_ip}")
+                return JSONResponse(
+                    {"error": "Too Many Requests", "message": "In-process rate limit exceeded. Please retry later."},
+                    status_code=429,
+                    headers={"X-Request-ID": req_id, "Retry-After": "60"},
+                )
+            timestamps.append(now)
+            _ip_request_timestamps[client_ip] = timestamps
+
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = req_id
+    return response
 
 
 async def enforce_demo_latency(start_time: float, min_seconds: float = DEMO_MIN_RESPONSE_SECONDS) -> float:
-    """
-    Centralized helper to ensure consistent minimum demo latency without slowing down retrieval or generation.
-    If actual processing took 2s, waits remaining 8s (total 10s).
-    If actual processing took 12s, waits 0s (total 12s).
-    """
+    """Centralized helper for demo latency pacing. When min_seconds is 0.0, adds zero delay."""
     elapsed = time.monotonic() - start_time
     remaining = min_seconds - elapsed
     if remaining > 0:
@@ -60,6 +103,7 @@ async def enforce_demo_latency(start_time: float, min_seconds: float = DEMO_MIN_
 
 log.info(f"Initializing BIS RAG Pipeline for Web Server (Demo Min Latency: {DEMO_MIN_RESPONSE_SECONDS}s)...")
 pipeline = BISRAGPipeline(use_fast_retrieval=True)
+feedback_logger = FeedbackLogger()
 
 
 class QueryRequest(BaseModel):
@@ -74,6 +118,16 @@ class FeedbackRequest(BaseModel):
     notes: Optional[str] = ""
 
 
+@app.get("/health")
+async def health_check():
+    """F6: Production health check endpoint (bypasses rate limiting)."""
+    return JSONResponse({
+        "status": "healthy",
+        "service": "bis_ai_assistant",
+        "version": "2.0.0",
+    })
+
+
 @app.get("/", response_class=HTMLResponse)
 async def get_index():
     index_file = BASE_DIR / "index.html"
@@ -84,12 +138,13 @@ async def get_index():
 
 
 @app.post("/api/chat")
-async def chat_endpoint(req: QueryRequest):
+async def chat_endpoint(req: QueryRequest, request: Request):
+    req_id = getattr(request.state, "request_id", "local")
     query_text = req.query.strip()
     if not query_text:
         return JSONResponse({"error": "Query cannot be empty"}, status_code=400)
 
-    log.info(f"Received Web Chat Query: '{query_text}'")
+    log.info(f"[{req_id}] Received Web Chat Query: '{query_text}'")
     req_start = time.monotonic()
     result = pipeline.query(query_text, category=req.category)
     total_elapsed_ms = await enforce_demo_latency(req_start)
@@ -109,6 +164,7 @@ async def chat_endpoint(req: QueryRequest):
         "retrieval_ms": result.get("retrieval_ms"),
         "generation_ms": result.get("generation_ms"),
         "total_ms": total_elapsed_ms,
+        "request_id": req_id,
     })
 
 
@@ -134,9 +190,25 @@ async def schemes_endpoint(scheme: str = "scheme_i"):
 
 
 @app.post("/api/feedback")
-async def feedback_endpoint(req: FeedbackRequest):
-    log.info(f"User Feedback received for query '{req.query}': Rating={req.rating}, Notes={req.notes}")
-    return JSONResponse({"success": True, "message": "Feedback recorded successfully."})
+async def feedback_endpoint(req: FeedbackRequest, request: Request):
+    req_id = getattr(request.state, "request_id", "local")
+    q_clean = req.query.strip() if req.query else ""
+    if not q_clean:
+        return JSONResponse({"success": False, "error": "Query cannot be empty"}, status_code=400)
+    if not isinstance(req.rating, int) or req.rating < 1 or req.rating > 5:
+        return JSONResponse({"success": False, "error": "Rating must be an integer between 1 and 5"}, status_code=400)
+
+    log.info(f"[{req_id}] User Feedback received for query '{q_clean[:40]}': Rating={req.rating}, Notes={req.notes}")
+    success = feedback_logger.log_feedback(
+        query=q_clean,
+        rating=req.rating,
+        notes=req.notes,
+        log_id=req.log_id,
+    )
+    if success:
+        return JSONResponse({"success": True, "message": "Feedback recorded successfully."})
+    else:
+        return JSONResponse({"success": False, "error": "Internal feedback storage error."}, status_code=500)
 
 
 if __name__ == "__main__":

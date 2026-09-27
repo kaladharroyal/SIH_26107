@@ -56,6 +56,8 @@ class ChunkRecord:
     page_range: str
     source_hash: str
     source_of_truth: str
+    document_id: Optional[str] = None
+    record_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

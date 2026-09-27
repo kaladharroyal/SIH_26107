@@ -1,5 +1,5 @@
 """
-Phase 5, Step 17: Language Detection, Hinglish Normalizer & Multilingual Strategy (multilingual.py)
+Phase 4 (integrated): Language Detection, Hinglish Normalizer & Multilingual Strategy (multilingual.py)
 Detects input language from the COMPLETE user sentence (English, Hindi, Telugu, Tamil, Bengali, Hinglish)
 using script distribution and full-sentence phrase analysis without reliance on initial tokens.
 """
@@ -153,6 +153,7 @@ class MultilingualHandler:
         """
         t = text
         # Hindi keywords
+        t = re.sub(r"स्कीम(?:[-–\s]*[i|ii|x|1|2])?|योजना", "scheme", t)
         t = re.sub(r"सीमेंट", "cement Ordinary Portland Cement", t)
         t = re.sub(r"स्टील|इस्पात", "steel reinforcement", t)
         t = re.sub(r"मानक", "standard", t)
@@ -162,13 +163,17 @@ class MultilingualHandler:
         t = re.sub(r"शिकायत", "complaint grievance", t)
         t = re.sub(r"दर्ज|पंजीकरण", "register file lodge", t)
         t = re.sub(r"शुल्क|फीस", "fee cost", t)
-        t = re.sub(r"प्रयोगशाला|लैब", "laboratory testing lab", t)
+        t = re.sub(r"परीक्षण", "testing", t)
+        t = re.sub(r"प्रयोगशाला(?:एं|ओं|शाला)?|लैब", "laboratory testing lab", t)
         t = re.sub(r"सोना|स्वर्ण|आभूषण", "gold hallmarking jewellery", t)
         t = re.sub(r"हॉलमार्क", "hallmark", t)
         t = re.sub(r"प्रक्रिया|नियम", "process procedure", t)
         t = re.sub(r"आवेदन|लाइसेंस", "apply license", t)
+        t = re.sub(r"कहाँ|कहां", "where", t)
+        t = re.sub(r"कैसे\s+करें", "how to", t)
         
         # Telugu keywords
+        t = re.sub(r"స్కీమ్(?:[-–\s]*[i|ii|x|1|2])?|పథకం", "scheme", t)
         t = re.sub(r"సిమెంట్(?:కు)?", "cement Ordinary Portland Cement", t)
         t = re.sub(r"ఉక్కు", "steel reinforcement", t)
         t = re.sub(r"ప్రమాణం|ప్రమాణాలు", "standard", t)
@@ -178,10 +183,53 @@ class MultilingualHandler:
         t = re.sub(r"ఫిర్యాదు", "complaint grievance", t)
         t = re.sub(r"నమోదు", "register file lodge", t)
         t = re.sub(r"రుసుము", "fee cost", t)
-        t = re.sub(r"ప్రయోగశాల", "laboratory testing lab", t)
+        t = re.sub(r"పరీక్ష(?:లు|ణ|ా)?", "testing", t)
+        t = re.sub(r"ప్రయోగశాల(?:లు)?", "laboratory testing lab", t)
         t = re.sub(r"బంగారం", "gold hallmarking", t)
         t = re.sub(r"విధానం|దరఖాస్తు", "process apply", t)
+        t = re.sub(r"ఎక్కడ", "where", t)
+        t = re.sub(r"ఎలా", "how to", t)
 
+        # Tamil keywords
+        t = re.sub(r"பிஐஎஸ்|பி\.ஐ\.எஸ்", "BIS", t)
+        t = re.sub(r"எல்இடி|எல்\.இ\.டி", "LED", t)
+        t = re.sub(r"சான்றிதழ்(?:கள்)?|சான்றளிப்பு", "certification certified", t)
+        t = re.sub(r"தரநிலை(?:கள்)?", "standard", t)
+        t = re.sub(r"பல்புகளுக்கு|பல்பு(?:கள்)?(?:க்கு)?", "bulb LED", t)
+        t = re.sub(r"சிமெண்ட்|சிமென்ட்", "cement Ordinary Portland Cement", t)
+        t = re.sub(r"எஃகு|இரும்பு|கம்பிகள்", "steel reinforcement TMT", t)
+        t = re.sub(r"கட்டாயம்|கட்டாயமா(?:க)?", "mandatory compulsory", t)
+        t = re.sub(r"பொரு(?:ட்கள்|ள்)", "product", t)
+        t = re.sub(r"புகார்", "complaint grievance", t)
+        t = re.sub(r"பதிவு", "register file lodge", t)
+        t = re.sub(r"கட்டணம்", "fee cost", t)
+        t = re.sub(r"ஆய்வகம்|பரிசோதனை", "laboratory testing lab", t)
+        t = re.sub(r"தங்கம்|நகை", "gold hallmarking jewellery", t)
+        t = re.sub(r"விண்ணப்பம்|நடைமுறை", "apply process", t)
+        t = re.sub(r"திட்டம்", "scheme", t)
+        t = re.sub(r"எங்கே", "where", t)
+        t = re.sub(r"எப்படி", "how to", t)
+
+        # Bengali keywords
+        t = re.sub(r"বিআইএস", "BIS", t)
+        t = re.sub(r"এলইডি", "LED", t)
+        t = re.sub(r"মানক|মান|মানদণ্ড", "standard", t)
+        t = re.sub(r"সিমেন্ট", "cement Ordinary Portland Cement", t)
+        t = re.sub(r"প্রমাণপত্র|সার্টিফিকেশন|শংসাপত্র", "certification certified", t)
+        t = re.sub(r"বাল্বের|বাল্ব", "bulb LED", t)
+        t = re.sub(r"ইস্পাত|লোহা", "steel reinforcement TMT", t)
+        t = re.sub(r"বাধ্যতামূলক", "mandatory compulsory", t)
+        t = re.sub(r"পণ্য", "product", t)
+        t = re.sub(r"অভিযোগ", "complaint grievance", t)
+        t = re.sub(r"দায়ের|নিবন্ধন", "register file lodge", t)
+        t = re.sub(r"ফি|খরচ", "fee cost", t)
+        t = re.sub(r"গবেষণাগার|পরীক্ষাগার|ল্যাব", "laboratory testing lab", t)
+        t = re.sub(r"সোনা|স্বর্ণ|গয়না|হলমার্ক", "gold hallmarking jewellery hallmark", t)
+        t = re.sub(r"আবেদন|প্রক্রিয়া", "apply process", t)
+        t = re.sub(r"স্কিম|যোজনা", "scheme", t)
+        t = re.sub(r"পরীক্ষা", "testing", t)
+        t = re.sub(r"কোথায়", "where", t)
+        t = re.sub(r"কীভাবে", "how to", t)
         return t
 
 

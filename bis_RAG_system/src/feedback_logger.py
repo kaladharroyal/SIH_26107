@@ -22,25 +22,28 @@ class FeedbackLogger:
         self._init_db()
 
     def _init_db(self):
-        conn = sqlite3.connect(self.db_path)
-        cur = conn.cursor()
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS interaction_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                query TEXT NOT NULL,
-                intent TEXT,
-                confidence_score REAL,
-                response_text TEXT,
-                retrieved_chunks TEXT,
-                rating INTEGER,
-                feedback_notes TEXT
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS interaction_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    query TEXT NOT NULL,
+                    intent TEXT,
+                    confidence_score REAL,
+                    response_text TEXT,
+                    retrieved_chunks TEXT,
+                    rating INTEGER,
+                    feedback_notes TEXT
+                )
+                """
             )
-            """
-        )
-        conn.commit()
-        conn.close()
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            log.error(f"Failed to initialize SQLite feedback database at {self.db_path}: {e}")
 
     def log_query(
         self,
@@ -84,6 +87,87 @@ class FeedbackLogger:
         conn.close()
         log.info(f"Submitted feedback rating {rating} for log ID #{log_id}")
         return success
+
+    def log_feedback(
+        self,
+        query: str,
+        rating: int,
+        notes: Optional[str] = None,
+        log_id: Optional[Any] = None,
+    ) -> bool:
+        """
+        Logs user feedback. If log_id is an integer corresponding to an existing query,
+        updates it; otherwise creates a new entry. Never raises exceptions.
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+
+            # If log_id provided and is an integer, attempt update
+            if log_id is not None:
+                try:
+                    int_id = int(log_id)
+                    cur.execute(
+                        "UPDATE interaction_logs SET rating = ?, feedback_notes = ? WHERE id = ?",
+                        (rating, notes, int_id),
+                    )
+                    if cur.rowcount > 0:
+                        conn.commit()
+                        conn.close()
+                        log.info(f"Updated feedback for interaction #{int_id} (rating={rating})")
+                        return True
+                except (ValueError, TypeError):
+                    pass
+
+            # Otherwise insert a direct feedback record
+            now = datetime.now(timezone.utc).isoformat()
+            cur.execute(
+                """
+                INSERT INTO interaction_logs (timestamp, query, intent, confidence_score, response_text, retrieved_chunks, rating, feedback_notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (now, query, "user_feedback", 1.0, "", "[]", rating, notes),
+            )
+            conn.commit()
+            conn.close()
+            log.info(f"Logged direct feedback for query '{query[:30]}' (rating={rating})")
+            return True
+        except Exception as e:
+            log.error(f"Error persisting feedback to SQLite: {e}")
+            return False
+
+    def get_recent_feedback(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Internal/testing helper to retrieve recent feedback records."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT * FROM interaction_logs WHERE rating IS NOT NULL ORDER BY id DESC LIMIT ?",
+                (limit,),
+            )
+            rows = [dict(row) for row in cur.fetchall()]
+            conn.close()
+            return rows
+        except Exception as e:
+            log.error(f"Error reading feedback: {e}")
+            return []
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Returns aggregate feedback counts and average rating."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*), AVG(rating) FROM interaction_logs WHERE rating IS NOT NULL")
+            count, avg_rating = cur.fetchone()
+            conn.close()
+            return {
+                "total_feedback": count or 0,
+                "average_rating": round(avg_rating, 2) if avg_rating is not None else 0.0,
+            }
+        except Exception as e:
+            log.error(f"Error retrieving feedback stats: {e}")
+            return {"total_feedback": 0, "average_rating": 0.0}
 
 
 if __name__ == "__main__":

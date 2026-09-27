@@ -5,13 +5,14 @@ and enforces refusal/redirection for out-of-corpus or ungrounded queries.
 """
 
 import logging
+import os
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("guardrails")
 
-CONFIDENCE_THRESHOLD = 0.45
+CONFIDENCE_THRESHOLD = float(os.environ.get("CONFIDENCE_THRESHOLD", "0.45"))  # F7: configurable via env
 
 OFFICIAL_FALLBACK_PORTALS = {
     "product_certification": "https://www.bis.gov.in/product-certification/product-certification-overview/?lang=en",
@@ -67,14 +68,47 @@ class GuardrailGate:
             is_num = doc.get("is_number", "")
             context_text += f" {is_num} {title} {text}".lower()
 
-        matched_tokens = 0
-        for kw in q_keywords:
-            # Check for exact word boundary or substring for IS numbers
-            if re.search(r"\b" + re.escape(kw) + r"\b", context_text):
-                matched_tokens += 1
+        # R1.3: Ubiquitous institutional tokens such as 'BIS' or 'Bureau' appear across
+        # virtually every document in the corpus and must not alone establish high evidence sufficiency.
+        UBIQUITOUS_INSTITUTIONAL_TOKENS = {"bis", "bureau"}
+        substantive_keywords = q_keywords - UBIQUITOUS_INSTITUTIONAL_TOKENS
+        institutional_keywords = q_keywords & UBIQUITOUS_INSTITUTIONAL_TOKENS
 
-        overlap_ratio = matched_tokens / len(q_keywords)
-        return float(overlap_ratio)
+        if not substantive_keywords:
+            # Query contains only institutional terms (e.g. "What is BIS?")
+            # "BIS" alone != sufficient evidence. Context must contain authoritative foundational definitions.
+            foundational_markers = [
+                r"\bnational\s+standards?\s+body\b",
+                r"\bstatutory\s+body\b",
+                r"\bestablished\s+under\b",
+                r"\bbis\s+act\b",
+                r"\bbureau\s+of\s+indian\s+standards\s+act\b",
+                r"\bmandate\s+of\s+bis\b",
+                r"\bcore\s+activities\s+of\s+bis\b",
+                r"\bfunctions\s+of\s+bis\b",
+            ]
+            has_foundational = any(re.search(pat, context_text) for pat in foundational_markers)
+            return 0.85 if has_foundational else 0.10
+
+        # Query has substantive terms beyond institutional tokens
+        matched_substantive = 0
+        for kw in substantive_keywords:
+            if re.search(r"\b" + re.escape(kw) + r"\b", context_text):
+                matched_substantive += 1
+
+        substantive_ratio = matched_substantive / len(substantive_keywords)
+
+        # If substantive terms didn't match at all, institutional tokens alone CANNOT validate
+        if substantive_ratio == 0.0:
+            return 0.0
+
+        if institutional_keywords:
+            matched_inst = sum(1 for kw in institutional_keywords if re.search(r"\b" + re.escape(kw) + r"\b", context_text))
+            inst_ratio = matched_inst / len(institutional_keywords)
+            # Weighted: 85% substantive terms, 15% institutional tokens
+            return float((substantive_ratio * 0.85) + (inst_ratio * 0.15))
+
+        return float(substantive_ratio)
 
     def calculate_confidence(self, query: str, retrieved_results: List[Dict[str, Any]]) -> float:
         """
@@ -169,6 +203,53 @@ class GuardrailGate:
 
         log.info(f"Refusal Gate PASSED for query: '{query}' (Confidence {confidence:.4f} >= Threshold {self.threshold})")
         return True, confidence, None
+
+    @staticmethod
+    def validate_subflow_compatibility(intent: str, query: str) -> Tuple[bool, str]:
+        """
+        F4: Specialized-flow sanity and grounding gate.
+        Validates that user query is compatible with the target sub-flow and refuses
+        unsupported or nonsensical requests before executing deterministic sub-flows.
+        """
+        if not query or not query.strip():
+            return False, "Query is empty."
+
+        q_lower = query.lower()
+
+        # Refuse obvious out-of-domain / nonsensical queries
+        out_of_domain = ["tokyo", "recipe", "bake bread", "weather in", "football", "property tax", "alien"]
+        if any(term in q_lower for term in out_of_domain):
+            return False, f"Query '{query[:50]}' is out-of-domain and incompatible with BIS compliance sub-flows."
+
+        if intent == "certification_process":
+            scheme_indicators = [
+                "scheme", "isi", "crs", "fmcs", "hallmark", "licen", "certif", "apply", "step",
+                "process", "fee", "cost", "document", "guid", "procedure", "walkthrough", "manakonline",
+                "प्रक्रिया", "आवेदन", "शुल्क", "लाइसेंस", "स्कीम", "योजना",
+                "దరఖాస్తు", "విధానం", "స్కీమ్", "పథకం", "திட்டம்", "স্কিম"
+            ]
+            if not any(k in q_lower for k in scheme_indicators):
+                return False, f"Query '{query[:50]}' is not compatible with official certification scheme walkthroughs."
+
+        elif intent == "consumer_complaint":
+            complaint_indicators = [
+                "complaint", "complain", "fake", "defective", "fraud", "shortfall", "compensation",
+                "purity", "underweight", "bis care", "rights", "grievance", "defect",
+                "शिकायत", "धोखा", "फ़र्ज़ी", "कम", "ఫిర్యాదు", "నకిలీ", "புகார்", "অভিযোগ"
+            ]
+            if not any(k in q_lower for k in complaint_indicators):
+                return False, f"Query '{query[:50]}' is not compatible with consumer complaint handling."
+
+        elif intent == "lab_location":
+            lab_indicators = [
+                "lab", "laboratory", "testing", "test", "facility", "where to test",
+                "assaying", "ahc", "scope", "centre", "प्रयोगशाला", "प्रयोगशालाएं", "लैब", "परीक्षण",
+                "ప్రయోగశాల", "ప్రయోగశాలలు", "పరీక్ష", "పరీక్షా", "ஆய்வகம்", "பரிசோதனை", "পরীক্ষাগার", "ল্যাব"
+            ]
+            if not any(k in q_lower for k in lab_indicators):
+                return False, f"Query '{query[:50]}' is not compatible with laboratory discovery."
+
+        return True, ""
 
 
 if __name__ == "__main__":

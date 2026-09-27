@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -44,79 +45,23 @@ def _load_env():
 _load_env()
 
 
-SYSTEM_GROUNDING_PROMPT = """You are an AI assistant for BIS standards and compliance information.
+SYSTEM_GROUNDING_PROMPT = """You are the answer-generation component of a BIS retrieval system.
 
-STRICT GROUNDING RULES:
-1. Your answers MUST be grounded exclusively in the verified BIS context supplied to you. Answer ONLY using the provided retrieved context chunks supplied to you. The retrieved BIS evidence is the source of truth.
-2. Do not use general pretrained knowledge or memory to fill missing information or add facts that are not present in the supplied context.
-3. Do not invent:
-- IS numbers
-- standards
-- clauses
-- fees
-- certification requirements
-- laboratory information
-- timelines
-- testing requirements
-- product requirements
-- URLs
-- dates
-- numerical values
-4. If the retrieved evidence is insufficient, explicitly say:
-- In Hindi: "उपलब्ध BIS सामग्री इस जानकारी की पुष्टि करने के लिए पर्याप्त नहीं है।"
-- In Telugu: "లభ్యమైన BIS సమాచారం దీనిని నిర్ధారించడానికి సరిపోదు."
-- In English: "The retrieved BIS material does not provide enough information to confirm this."
-5. Do not pretend to be BIS. Do not claim to be an official BIS officer. Present yourself as an AI assistant providing information retrieved from BIS sources.
-6. Do not mention internal implementation details such as:
-- BM25
-- BGE-M3
-- RRF
-- CrossEncoder
-- embeddings
-- vector database
-- chunks
-- retrieval scores
-- prompts
-- model internals
-- model limitations
-Do not say 'according to my training data'.
-7. RESPONSE LANGUAGE RULE:
-Answer in the dominant language of the user's COMPLETE ORIGINAL QUERY.
-Do not determine the language from the first word.
-Technical identifiers such as BIS, IS numbers, CRS, FMCS, QCO, ISI, OPC, and TMT do not determine the response language.
-- If the majority of meaningful user text is Hindi, answer in Hindi.
-- If the majority is Telugu, answer in Telugu.
-- If the query is Hinglish, answer in natural Hinglish/Hindi.
-- If the query is English, answer in English.
-Do NOT switch to English merely because the retrieved BIS documents are written in English.
-The retrieved evidence may be in English, but you must explain that evidence in the user's language.
+Answer only from the supplied retrieved evidence.
 
-8. Preserve exact technical identifiers:
-- IS numbers (e.g. IS 10322, IS 1786, IS 269)
-- clause numbers
-- scheme names (e.g. Scheme I, CRS, FMCS, Hallmarking identifiers)
-- BIS
-- QCO
-Do not translate or modify these identifiers.
-Do not translate official document titles if doing so could make the citation ambiguous.
+Do not use outside knowledge.
 
-9. Exact numerical figures and values must be preserved character-for-character as they appear in the supplied evidence without approximation.
-10. Answer directly, concisely, and professionally.
-11. Use this structure where appropriate:
+Do not infer unsupported BIS standards.
 
-### Direct Answer (or सीधा उत्तर / ప్రత్యక్ష సమాధానం / Seedha Jawab)
-[Direct factual answer based on retrieved evidence.]
+Do not invent facts.
 
-### Key Details (or मुख्य जानकारी / ముఖ్యమైన వివరాలు / Important Details)
-[Only verified details from the supplied BIS context.]
+If the evidence does not establish the answer, explicitly state that the available evidence is insufficient.
 
-### Standard / Scheme (or मानक / ప్రమాణం / Standard)
-[Exact standard or scheme identifier.]
+Preserve uncertainty when the evidence is ambiguous.
 
-### Source (or स्रोत / మూలం)
-[The one primary source selected by the citation system.]
+Use the source information supplied with the evidence when making factual claims.
 
-Do not add unsupported information merely to make the response longer. Every factual claim must be supported by the supplied retrieved context."""
+When citing standards, clauses, or documents, include the applicable Indian Standard designation or document reference in brackets (for example: [IS 1786], [IS 269], or [IS 1489]), corresponding strictly to the supplied evidence."""
 
 
 class BaseLLMProvider(ABC):
@@ -161,74 +106,90 @@ class GeminiProvider(BaseLLMProvider):
 
     def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        self.model_name = model_name or os.getenv("GEMINI_MODEL") or os.getenv("GEMINI_MODEL_NAME") or "gemini-2.5-flash"
+        self.model_name = model_name or os.getenv("GEMINI_MODEL") or os.getenv("GEMINI_MODEL_NAME") or "gemini-3.5-flash-lite"
 
     def generate(self, system_prompt: str, user_prompt: str, temperature: float = 0.1) -> Dict[str, Any]:
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY is not configured.")
 
-        # 1. Try modern google.genai SDK
-        try:
-            from google import genai
-            from google.genai import types
-            client = genai.Client(api_key=self.api_key)
-            config = types.GenerateContentConfig(
-                temperature=temperature,
-                system_instruction=system_prompt,
-            )
-            response = client.models.generate_content(
-                model=self.model_name,
-                contents=user_prompt,
-                config=config,
-            )
-            return {
-                "response": response.text,
-                "model_used": self.model_name,
-                "provider": "gemini",
-                "fallback_triggered": False,
-            }
-        except Exception as e_sdk:
-            # 2. Try legacy google.generativeai SDK
+        max_attempts = 4
+        last_err = None
+        for attempt in range(1, max_attempts + 1):
             try:
-                import google.generativeai as legacy_genai
-                legacy_genai.configure(api_key=self.api_key)
-                model = legacy_genai.GenerativeModel(
-                    model_name=self.model_name,
-                    system_instruction=system_prompt,
-                )
-                response = model.generate_content(
-                    user_prompt,
-                    generation_config={"temperature": temperature},
-                )
-                return {
-                    "response": response.text,
-                    "model_used": self.model_name,
-                    "provider": "gemini",
-                    "fallback_triggered": False,
-                }
-            except Exception:
-                # 3. Direct HTTP REST fallback
-                import requests
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent?key={self.api_key}"
-                payload = {
-                    "contents": [{"parts": [{"text": f"{system_prompt}\n\n{user_prompt}"}]}],
-                    "generationConfig": {"temperature": temperature},
-                }
-                resp = requests.post(url, json=payload, timeout=30)
-                data = resp.json()
-                if resp.status_code != 200 or "candidates" not in data:
-                    err_msg = data.get("error", {}).get("message", f"HTTP {resp.status_code}")
-                    raise RuntimeError(f"Gemini API Error: {err_msg} (GenAI SDK Error: {e_sdk})")
+                # 1. Try modern google.genai SDK
+                try:
+                    from google import genai
+                    from google.genai import types
+                    client = genai.Client(api_key=self.api_key)
+                    config = types.GenerateContentConfig(
+                        temperature=temperature,
+                        system_instruction=system_prompt,
+                    )
+                    response = client.models.generate_content(
+                        model=self.model_name,
+                        contents=user_prompt,
+                        config=config,
+                    )
+                    return {
+                        "response": response.text,
+                        "model_used": self.model_name,
+                        "provider": "gemini",
+                        "fallback_triggered": False,
+                    }
+                except Exception as e_sdk:
+                    err_sdk_str = str(e_sdk)
+                    if "429" in err_sdk_str or "RESOURCE_EXHAUSTED" in err_sdk_str:
+                        raise e_sdk
+                    # 2. Try legacy google.generativeai SDK
+                    try:
+                        import google.generativeai as legacy_genai
+                        legacy_genai.configure(api_key=self.api_key)
+                        model = legacy_genai.GenerativeModel(
+                            model_name=self.model_name,
+                            system_instruction=system_prompt,
+                        )
+                        response = model.generate_content(
+                            user_prompt,
+                            generation_config={"temperature": temperature},
+                        )
+                        return {
+                            "response": response.text,
+                            "model_used": self.model_name,
+                            "provider": "gemini",
+                            "fallback_triggered": False,
+                        }
+                    except Exception:
+                        # 3. Direct HTTP REST fallback
+                        import requests
+                        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent?key={self.api_key}"
+                        payload = {
+                            "contents": [{"parts": [{"text": f"{system_prompt}\n\n{user_prompt}"}]}],
+                            "generationConfig": {"temperature": temperature},
+                        }
+                        resp = requests.post(url, json=payload, timeout=30)
+                        data = resp.json()
+                        if resp.status_code != 200 or "candidates" not in data:
+                            err_msg = data.get("error", {}).get("message", f"HTTP {resp.status_code}")
+                            raise RuntimeError(f"Gemini API Error: {err_msg} (GenAI SDK Error: {e_sdk})")
 
-                text = data["candidates"][0]["content"]["parts"][0]["text"]
-                return {
-                    "response": text,
-                    "model_used": self.model_name,
-                    "provider": "gemini",
-                    "fallback_triggered": False,
-                }
-
-
+                        text = data["candidates"][0]["content"]["parts"][0]["text"]
+                        return {
+                            "response": text,
+                            "model_used": self.model_name,
+                            "provider": "gemini",
+                            "fallback_triggered": False,
+                        }
+            except Exception as e:
+                last_err = e
+                err_str = str(e)
+                if ("429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower()) and attempt < max_attempts:
+                    m = re.search(r"retry in (\d+(?:\.\d+)?)s", err_str, re.IGNORECASE)
+                    wait_s = float(m.group(1)) + 2.0 if m else 32.0
+                    log.warning(f"Gemini rate limit 429 (attempt {attempt}/{max_attempts}). Waiting {wait_s:.1f}s before retry...")
+                    time.sleep(wait_s)
+                else:
+                    raise e
+        raise last_err
 
 
 class MockOfflineProvider(BaseLLMProvider):
@@ -392,61 +353,76 @@ class GroundedGenerator:
         openai_key = self.api_key or os.getenv("OPENAI_API_KEY")
         gemini_key = self.api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
-        if p_name == "gemini" and gemini_key:
-            model = self.model_name or os.getenv("GEMINI_MODEL") or os.getenv("GEMINI_MODEL_NAME") or "gemini-2.5-flash"
+        if p_name == "gemini":
+            if not gemini_key:
+                raise ValueError("GEMINI_API_KEY is not configured but provider 'gemini' was requested.")
+            model = self.model_name or os.getenv("GEMINI_MODEL") or os.getenv("GEMINI_MODEL_NAME") or "gemini-3.5-flash-lite"
             log.info(f"Initialized real Gemini provider with model '{model}'")
             return GeminiProvider(api_key=gemini_key, model_name=model)
-        elif p_name == "openai" and openai_key:
-            log.info(f"Initialized real OpenAI provider with model '{self.model_name or os.getenv('OPENAI_MODEL', 'gpt-4o-mini')}'")
-            return OpenAIProvider(api_key=openai_key, model_name=self.model_name or os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
-        elif gemini_key and p_name not in ["mock", "offline"]:
-            model = self.model_name or os.getenv("GEMINI_MODEL") or os.getenv("GEMINI_MODEL_NAME") or "gemini-2.5-flash"
+        elif p_name == "openai":
+            if not openai_key:
+                raise ValueError("OPENAI_API_KEY is not configured but provider 'openai' was requested.")
+            model = self.model_name or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+            log.info(f"Initialized real OpenAI provider with model '{model}'")
+            return OpenAIProvider(api_key=openai_key, model_name=model)
+        elif p_name in ["mock", "offline"]:
+            log.info("Initialized MockOfflineProvider (offline testing mode).")
+            return MockOfflineProvider(model_name="mock-grounded-synthesizer")
+        elif gemini_key:
+            model = self.model_name or os.getenv("GEMINI_MODEL") or os.getenv("GEMINI_MODEL_NAME") or "gemini-3.5-flash-lite"
             log.info(f"Auto-selected real Gemini provider with model '{model}'")
             return GeminiProvider(api_key=gemini_key, model_name=model)
-        elif openai_key and p_name not in ["mock", "offline"]:
-            log.info(f"Auto-selected real OpenAI provider with model '{self.model_name or os.getenv('OPENAI_MODEL', 'gpt-4o-mini')}'")
-            return OpenAIProvider(api_key=openai_key, model_name=self.model_name or os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+        elif openai_key:
+            model = self.model_name or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+            log.info(f"Auto-selected real OpenAI provider with model '{model}'")
+            return OpenAIProvider(api_key=openai_key, model_name=model)
         else:
-            if p_name not in ["mock", "offline"]:
-                log.warning(f"Provider '{self.provider_name}' specified without active API key. Defaulting to MockOfflineProvider.")
-            return MockOfflineProvider(model_name="mock-grounded-synthesizer")
+            raise ValueError(f"No valid LLM API key found for requested provider: '{self.provider_name}'")
 
 
     @staticmethod
-    def format_context_block(context_chunks: List[Dict[str, Any]]) -> str:
-        """
-        Formats retrieved chunks into a standardized context block,
-        supporting all Phase 1 chunk types gracefully.
-        """
+    def format_context_block(
+        context_chunks: List[Dict[str, Any]],
+        char_budget: int = 100_000,
+    ) -> str:
+        """Formats retrieved chunks into strict evidence blocks: [Evidence N]"""
         if not context_chunks:
             return "No context retrieved."
 
         formatted = []
+        total_chars = 0
+        excluded = 0
         for idx, item in enumerate(context_chunks, 1):
             doc = item.get("doc", item)
-            chunk_id = doc.get("chunk_id", f"chunk_{idx}")
-            is_no = doc.get("is_number") or doc.get("standard")
-            rev_yr = doc.get("revision_year")
-            clause_no = doc.get("clause_number")
-            clause_title = doc.get("clause_title") or doc.get("product") or doc.get("title") or "General Specification"
-            category = doc.get("category", "general")
-            page_start = doc.get("page_start", 1)
-            page_end = doc.get("page_end", page_start)
-            source_url = doc.get("source_url") or doc.get("source_file", "Official BIS Record")
-            content = doc.get("text", "").strip()
+            chunk_id = item.get("chunk_id") or doc.get("chunk_id") or f"chunk_{idx}"
+            source_pdf = item.get("source_pdf") or doc.get("source_pdf") or doc.get("source_file") or doc.get("source_url") or "Official BIS Record"
+            page = item.get("page") or doc.get("page") or doc.get("page_range") or doc.get("page_start") or "1"
+            standard = item.get("standard") or doc.get("standard") or doc.get("is_number") or "N/A"
+            category = item.get("category") or doc.get("category") or "general"
+            title = item.get("title") or doc.get("title") or doc.get("clause_title") or doc.get("product") or "General"
+            content = (item.get("text") or doc.get("text") or "").strip()
 
-            std_repr = f"{is_no}:{rev_yr}" if rev_yr and is_no else (is_no or "BIS-GENERAL_POLICY")
-            clause_repr = f"Clause {clause_no}" if clause_no else "Clause General"
+            block = (
+                f"[Evidence {idx}]\n"
+                f"chunk_id: {chunk_id}\n"
+                f"source_pdf: {source_pdf}\n"
+                f"page: {page}\n"
+                f"standard: {standard}\n"
+                f"category: {category}\n"
+                f"title: {title}\n"
+                f"text: {content}\n"
+            )
 
+            if total_chars + len(block) > char_budget:
+                excluded += 1
+                continue
+            formatted.append(block)
+            total_chars += len(block)
+
+        if excluded:
             formatted.append(
-                f"--- CONTEXT CHUNK {idx} ---\n"
-                f"Chunk ID: {chunk_id}\n"
-                f"Category: {category}\n"
-                f"IS Number: {std_repr}\n"
-                f"Clause: {clause_repr} ({clause_title})\n"
-                f"Page: {page_start}-{page_end}\n"
-                f"Source: {source_url}\n"
-                f"Content:\n{content}\n"
+                f"[NOTE: {excluded} additional evidence block(s) were excluded to stay within the "
+                f"context budget. Retrieval ranking was preserved.]"
             )
 
         return "\n".join(formatted)
@@ -458,22 +434,16 @@ class GroundedGenerator:
         response_language: str = "English",
         original_query: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Generates grounded response using the configured provider with strict language enforcement."""
+        """Generates grounded response using the configured provider."""
         context_str = self.format_context_block(context_chunks)
         orig_q = original_query or query
 
         user_prompt = (
-            f"ORIGINAL USER QUERY:\n{orig_q}\n\n"
-            f"RESPONSE LANGUAGE:\n{response_language}\n\n"
-            f"USER QUERY (NORMALIZED):\n{query}\n\n"
-            f"RETRIEVED BIS EVIDENCE (SOURCE OF TRUTH):\n{context_str}\n\n"
-            f"INSTRUCTION:\n"
-            f"Generate a grounded response based EXCLUSIVELY on the retrieved BIS evidence above. "
-            f"You MUST write the entire response in '{response_language}'. "
-            f"Preserve exact technical identifiers such as IS numbers, clause numbers, and scheme names unchanged."
+            f"USER:\n{orig_q}\n\n"
+            f"RETRIEVED EVIDENCE:\n{context_str}"
         )
 
-        log.info(f"Generating grounded response for: '{query[:40]}' (Lang: {response_language}, {len(context_chunks)} chunks, provider: {self.provider.__class__.__name__})")
+        log.info(f"Generating grounded response for: '{orig_q[:40]}' ({len(context_chunks)} chunks, provider: {self.provider.__class__.__name__})")
 
         try:
             result = self.provider.generate(
@@ -485,13 +455,23 @@ class GroundedGenerator:
             result["response_language"] = response_language
             return result
         except Exception as e:
-            log.warning(f"Generation with {self.provider.__class__.__name__} failed: {e}. Falling back to MockOfflineProvider.")
-            fallback = MockOfflineProvider()
-            res = fallback.generate(SYSTEM_GROUNDING_PROMPT, user_prompt, temperature=0.1)
-            res["chunks_used"] = len(context_chunks)
-            res["fallback_triggered"] = True
-            res["response_language"] = response_language
-            return res
+            log.error(f"Generation with {self.provider.__class__.__name__} failed: {e}")
+            if isinstance(self.provider, MockOfflineProvider):
+                res = self.provider.generate(SYSTEM_GROUNDING_PROMPT, user_prompt, temperature=0.1)
+                res["chunks_used"] = len(context_chunks)
+                res["fallback_triggered"] = True
+                res["response_language"] = response_language
+                return res
+            else:
+                return {
+                    "response": f"The available BIS evidence could not be processed because the LLM provider '{self.provider_name}' is unavailable: {e}",
+                    "model_used": getattr(self.provider, "model_name", "unknown"),
+                    "provider": "unavailable",
+                    "error": str(e),
+                    "fallback_triggered": False,
+                    "chunks_used": len(context_chunks),
+                    "response_language": response_language,
+                }
 
 
 if __name__ == "__main__":

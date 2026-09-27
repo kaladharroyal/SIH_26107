@@ -82,7 +82,15 @@ class IngestionPipeline:
         max_workers: int = 8,
     ):
         self.raw_dir = Path(raw_dir)
-        self.pdf_dir = Path(pdf_dir) if pdf_dir else (self.raw_dir / "pdfs" if (self.raw_dir / "pdfs").exists() else self.raw_dir)
+        if pdf_dir:
+            self.pdf_dir = Path(pdf_dir)
+        elif Path("V:/PROJECTS/SIH_26107/bis_data/bis_data/raw_data").exists():
+            self.pdf_dir = Path("V:/PROJECTS/SIH_26107/bis_data/bis_data/raw_data")
+        elif (self.raw_dir / "pdfs").exists():
+            self.pdf_dir = self.raw_dir / "pdfs"
+        else:
+            self.pdf_dir = self.raw_dir
+
         self.out_path = Path(out_path)
         self.mode = mode.lower()
         self.max_workers = max_workers
@@ -95,9 +103,20 @@ class IngestionPipeline:
         self.pdf_ingestor = PDFIngestor(self.validator)
 
         if self.mode == "full":
-            self.dataset_name = dataset_name or "PHASE1_FULL_PDF_CORPUS"
-            self.manifest_path = manifest_path or (self.raw_dir / "manifest.jsonl")
-            self.checkpoint_path = checkpoint_path or (self.raw_dir / "ingestion_checkpoint_full_pdf.json")
+            self.dataset_name = dataset_name or "PHASE2_CANONICAL_CORPUS"
+            if manifest_path:
+                self.manifest_path = Path(manifest_path)
+            elif Path("V:/PROJECTS/SIH_26107/recovery_manifest.jsonl").exists():
+                self.manifest_path = Path("V:/PROJECTS/SIH_26107/recovery_manifest.jsonl")
+            elif Path("recovery_manifest.jsonl").exists():
+                self.manifest_path = Path("recovery_manifest.jsonl")
+            else:
+                self.manifest_path = self.raw_dir / "manifest.jsonl"
+
+            if checkpoint_path:
+                self.checkpoint_path = Path(checkpoint_path)
+            else:
+                self.checkpoint_path = self.raw_dir / "ingestion_checkpoint_full_pdf.json"
             self.faq_ingestor = None
             self.preview_ingestor = None
             self.structured_ingestor = None
@@ -149,8 +168,9 @@ class IngestionPipeline:
                     try:
                         entry = json.loads(line)
                         lp = entry.get("local_path", "")
-                        fn = Path(lp.replace("\\", "/")).name
-                        manifest_by_file.setdefault(fn, []).append(entry)
+                        fn = entry.get("filename") or Path(lp.replace("\\", "/")).name
+                        if fn:
+                            manifest_by_file.setdefault(fn, []).append(entry)
                     except Exception as e:
                         log.warning(f"Error reading manifest line: {e}")
 
@@ -191,122 +211,231 @@ class IngestionPipeline:
         except Exception as e:
             return "CORRUPT", False, f"PDF reader error: {e}"
 
+    def load_canonical_manifest(self) -> List[Dict[str, Any]]:
+        """
+        Loads the authoritative manifest and returns the canonical records.
+        Filters strictly for canonical records.
+        """
+        if not self.manifest_path.exists():
+            raise FileNotFoundError(f"Authoritative manifest not found at {self.manifest_path}")
+
+        records: List[Dict[str, Any]] = []
+        with open(self.manifest_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    try:
+                        entry = json.loads(line)
+                        if entry.get("canonical", True):
+                            records.append(entry)
+                    except Exception as e:
+                        log.warning(f"Error parsing manifest line: {e}")
+
+        log.info(f"Loaded {len(records)} canonical records from {self.manifest_path}")
+        return records
+
     def run_full_pdf_corpus(self) -> List[ChunkRecord]:
         """
-        Executes Full PDF Corpus Parsing directly from raw_data/pdfs/.
-        Bypasses baseline limits and processes zero JSON files.
+        Executes manifest-driven canonical corpus ingestion.
+        Processes exactly the 1,436 canonical manifest population against verified source PDFs.
         """
         start_time = time.time()
-        log.info(f"Starting full PDF corpus ingestion from {self.pdf_dir}")
+        log.info(f"Starting canonical PDF corpus ingestion from {self.pdf_dir} using manifest {self.manifest_path}")
 
         if not self.pdf_dir.exists():
             raise FileNotFoundError(f"PDF directory does not exist: {self.pdf_dir}")
 
-        # 1. Discover all physical PDF files dynamically
-        pdf_paths = sorted(list(self.pdf_dir.rglob("*.pdf")))
-        total_discovered_pdfs = len(pdf_paths)
-        log.info(f"Discovered {total_discovered_pdfs} physical PDF files in {self.pdf_dir}")
+        # 1. Load canonical records from authoritative manifest
+        canonical_records = self.load_canonical_manifest()
+        total_canonical = len(canonical_records)
 
-        if total_discovered_pdfs == 0:
-            log.warning(f"No PDF files found in {self.pdf_dir}")
-            return []
-
-        # 2. Load provenance metadata mapping from full manifest
-        manifest_by_file = self.load_manifest_metadata_map()
+        if self.max_limit and self.max_limit < total_canonical:
+            log.info(f"Limiting execution to first {self.max_limit} canonical records (max_limit)")
+            canonical_records = canonical_records[:self.max_limit]
+            total_canonical = len(canonical_records)
 
         all_chunks: List[ChunkRecord] = []
         new_checkpoint: Dict[str, Any] = dict(self.checkpoint_cache)
 
-        processed_pdf_files_count = 0
-        quarantined_pdf_files_count = 0
-        skipped_pdf_files_count = 0
+        processed_records: List[Dict[str, Any]] = []
+        failed_records: List[Dict[str, Any]] = []
+        unresolved_records: List[Dict[str, Any]] = []
+        skipped_records: List[Dict[str, Any]] = []
+        docs_with_chunks = 0
+        docs_without_chunks = 0
         total_raw_chunks_count = 0
 
-        # 3. Threaded PDF parsing worker function
-        def process_single_physical_pdf(pdf_path: Path) -> Tuple[str, List[ChunkRecord], str, str, bool]:
-            fn = pdf_path.name
-            entries = manifest_by_file.get(fn, [{}])
-            primary_entry = entries[0]
+        # 2. Worker function for a single canonical manifest record
+        def process_single_canonical_record(
+            rec: Dict[str, Any]
+        ) -> Tuple[Dict[str, Any], List[ChunkRecord], str, str, Optional[str]]:
+            fn = rec.get("filename", "")
+            rec_id = rec.get("record_id", "")
+            doc_id = rec.get("document_id", "")
+            expected_sha = rec.get("expected_sha256", "")
+            src_url = rec.get("source_url", f"file:///{fn}")
 
-            # Content hash computation
-            file_hash = primary_entry.get("content_hash") or primary_entry.get("source_hash")
-            if not file_hash and pdf_path.exists():
-                try:
-                    file_hash = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
-                except Exception:
-                    file_hash = f"hash_{fn[:12]}"
-            elif not file_hash:
-                file_hash = f"missing_{fn[:12]}"
+            pdf_path = self.pdf_dir / fn
+            if not pdf_path.exists():
+                return rec, [], "", "UNRESOLVED", f"File does not exist: {fn}"
 
-            # Validation gate
+            # Content hash & pre-validation
+            try:
+                actual_sha = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
+            except Exception as e:
+                return rec, [], "", "FAILED", f"Error reading file bytes: {e}"
+
+            if expected_sha and actual_sha.lower() != expected_sha.lower():
+                self.quarantine_logger.log_quarantine(
+                    str(pdf_path), src_url, "SHA_MISMATCH",
+                    f"Expected SHA {expected_sha} but found {actual_sha}"
+                )
+                return rec, [], actual_sha, "FAILED", f"SHA-256 mismatch: expected {expected_sha} got {actual_sha}"
+
+            file_hash = actual_sha or expected_sha
+
+            # Physical PDF structure validation
             status, is_valid, reason = self.validate_pdf_file(pdf_path)
             if not is_valid:
-                src_url = primary_entry.get("source_url", f"file:///{fn}")
                 self.quarantine_logger.log_quarantine(str(pdf_path), src_url, status, reason)
-                return fn, [], file_hash, status, False
+                return rec, [], file_hash, "FAILED", f"Invalid PDF ({status}): {reason}"
 
-            # Checkpoint cache check
+            # Checkpoint cache check (resumability)
             cached = self.checkpoint_cache.get(fn)
-            if cached and cached.get("hash") == file_hash and "chunks" in cached:
+            if (
+                cached
+                and cached.get("hash") == file_hash
+                and "chunks" in cached
+                and cached.get("status") == "PROCESSED"
+            ):
                 cached_chunks = [ChunkRecord(**c) for c in cached["chunks"]]
-                return fn, cached_chunks, file_hash, "CACHED", True
+                return rec, cached_chunks, file_hash, "PROCESSED", None
 
-            # Ingest chunks for each logical reference (or single file entry)
-            file_chunks: List[ChunkRecord] = []
-            for ent in entries:
-                extracted = self.pdf_ingestor.ingest_pdf(pdf_path, ent)
-                file_chunks.extend(extracted)
+            # Ingest chunks using PDFIngestor
+            try:
+                file_chunks = self.pdf_ingestor.ingest_pdf(pdf_path, rec)
+                return rec, file_chunks, file_hash, "PROCESSED", None
+            except Exception as e:
+                self.quarantine_logger.log_quarantine(str(pdf_path), src_url, "INGEST_EXCEPTION", str(e))
+                return rec, [], file_hash, "FAILED", f"Exception during ingestion: {e}"
 
-            return fn, file_chunks, file_hash, "PARSED", True
-
-        # 4. Multi-threaded execution with periodic checkpointing
-        log.info(f"Ingesting {total_discovered_pdfs} PDF files using {self.max_workers} worker threads...")
+        # 3. Multi-threaded execution with periodic atomic checkpointing
+        log.info(f"Ingesting {total_canonical} canonical records using {self.max_workers} worker threads...")
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            future_to_file = {
-                executor.submit(process_single_physical_pdf, p): p
-                for p in pdf_paths
+            future_to_rec = {
+                executor.submit(process_single_canonical_record, r): r
+                for r in canonical_records
             }
 
-            for completed_idx, future in enumerate(as_completed(future_to_file), 1):
-                p = future_to_file[future]
-                fn = p.name
+            for completed_idx, future in enumerate(as_completed(future_to_rec), 1):
+                rec = future_to_rec[future]
+                fn = rec.get("filename", "")
+                rec_id = rec.get("record_id", "")
+                doc_id = rec.get("document_id", "")
+
                 try:
-                    filename, chunk_list, file_hash, status, is_valid = future.result()
+                    record, chunk_list, file_hash, status, failure_reason = future.result()
 
-                    if not is_valid:
-                        quarantined_pdf_files_count += 1
-                    elif chunk_list:
-                        processed_pdf_files_count += 1
-                        total_raw_chunks_count += len(chunk_list)
-                        for ch in chunk_list:
-                            if not self.deduplicator.is_duplicate(ch.chunk_id):
-                                all_chunks.append(ch)
-                    else:
-                        skipped_pdf_files_count += 1
+                    if status == "UNRESOLVED":
+                        unresolved_records.append({
+                            "record_id": rec_id,
+                            "document_id": doc_id,
+                            "filename": fn,
+                            "reason": failure_reason,
+                        })
+                        new_checkpoint[fn] = {
+                            "record_id": rec_id,
+                            "document_id": doc_id,
+                            "hash": file_hash,
+                            "status": "UNRESOLVED",
+                            "error": failure_reason,
+                            "chunks_count": 0,
+                            "chunks": [],
+                        }
+                    elif status == "FAILED":
+                        failed_records.append({
+                            "record_id": rec_id,
+                            "document_id": doc_id,
+                            "filename": fn,
+                            "reason": failure_reason,
+                        })
+                        new_checkpoint[fn] = {
+                            "record_id": rec_id,
+                            "document_id": doc_id,
+                            "hash": file_hash,
+                            "status": "FAILED",
+                            "error": failure_reason,
+                            "chunks_count": 0,
+                            "chunks": [],
+                        }
+                    elif status == "SKIPPED":
+                        skipped_records.append({
+                            "record_id": rec_id,
+                            "document_id": doc_id,
+                            "filename": fn,
+                            "reason": failure_reason,
+                        })
+                        new_checkpoint[fn] = {
+                            "record_id": rec_id,
+                            "document_id": doc_id,
+                            "hash": file_hash,
+                            "status": "SKIPPED",
+                            "error": failure_reason,
+                            "chunks_count": 0,
+                            "chunks": [],
+                        }
+                    else:  # PROCESSED
+                        processed_records.append(rec)
+                        if chunk_list:
+                            docs_with_chunks += 1
+                            total_raw_chunks_count += len(chunk_list)
+                            for ch in chunk_list:
+                                if not self.deduplicator.is_duplicate(ch.chunk_id):
+                                    all_chunks.append(ch)
+                        else:
+                            docs_without_chunks += 1
 
-                    # Update checkpoint state
-                    new_checkpoint[fn] = {
-                        "hash": file_hash,
-                        "chunks": [c.to_dict() for c in chunk_list]
-                    }
+                        new_checkpoint[fn] = {
+                            "record_id": rec_id,
+                            "document_id": doc_id,
+                            "hash": file_hash,
+                            "status": "PROCESSED",
+                            "chunks_count": len(chunk_list),
+                            "chunks": [c.to_dict() for c in chunk_list],
+                        }
 
                     # Periodic atomic checkpoint save & progress logging
-                    if completed_idx % 100 == 0 or completed_idx == total_discovered_pdfs:
+                    if completed_idx % 50 == 0 or completed_idx == total_canonical:
                         self._save_checkpoint_atomic(new_checkpoint)
-                        pct = (completed_idx / total_discovered_pdfs) * 100
+                        pct = (completed_idx / total_canonical) * 100
                         log.info(
-                            f"Processed {completed_idx}/{total_discovered_pdfs} PDF files ({pct:.1f}%) | "
-                            f"Chunks: {len(all_chunks)} unique ({self.deduplicator.duplicate_count} duplicates)"
+                            f"Progress: {completed_idx}/{total_canonical} records ({pct:.1f}%) | "
+                            f"Processed: {len(processed_records)}, Failed: {len(failed_records)}, "
+                            f"Unresolved: {len(unresolved_records)} | "
+                            f"Chunks: {len(all_chunks)} unique ({self.deduplicator.duplicate_count} dupes)"
                         )
 
                 except Exception as e:
-                    log.error(f"Error processing future for {fn}: {e}")
-                    quarantined_pdf_files_count += 1
+                    log.error(f"Error processing future for record {rec_id} ({fn}): {e}")
+                    failed_records.append({
+                        "record_id": rec_id,
+                        "document_id": doc_id,
+                        "filename": fn,
+                        "reason": f"Unhandled future exception: {e}",
+                    })
+                    new_checkpoint[fn] = {
+                        "record_id": rec_id,
+                        "document_id": doc_id,
+                        "hash": "",
+                        "status": "FAILED",
+                        "error": str(e),
+                        "chunks_count": 0,
+                        "chunks": [],
+                    }
 
         # Final checkpoint flush
         self._save_checkpoint_atomic(new_checkpoint)
 
-        # 5. Atomic Output Write
+        # 4. Atomic Output Write
         tmp_out = self.out_path.with_suffix(".tmp.jsonl")
         log.info(f"Writing {len(all_chunks)} finalized chunks to temporary file {tmp_out}")
         sorted_chunks = sorted(all_chunks, key=lambda c: c.chunk_id)
@@ -325,11 +454,15 @@ class IngestionPipeline:
 
         elapsed_time = round(time.time() - start_time, 2)
 
-        # 6. Reconciled Dynamic Population Reporting
-        duplicates_eliminated = self.deduplicator.duplicate_count
+        # 5. Reconciled Population Reporting
+        processed_count = len(processed_records)
+        failed_count = len(failed_records)
+        skipped_count = len(skipped_records)
+        unresolved_count = len(unresolved_records)
         unique_chunks = len(all_chunks)
+        duplicates_eliminated = self.deduplicator.duplicate_count
 
-        cat_dist = {}
+        cat_dist: Dict[str, int] = {}
         for c in all_chunks:
             cat_dist[c.category] = cat_dist.get(c.category, 0) + 1
 
@@ -340,39 +473,28 @@ class IngestionPipeline:
         quality_report = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "dataset_name": self.dataset_name,
-            "dataset_scope": "Full Physical PDF Corpus (raw_data/pdfs/)",
+            "dataset_scope": "Authoritative Canonical BIS Corpus (recovery_manifest.jsonl)",
             "runtime_seconds": elapsed_time,
             "raw_records": {
-                "discovered": total_discovered_pdfs,
-                "processed": processed_pdf_files_count,
-                "quarantined": quarantined_pdf_files_count,
-                "explicitly_skipped": skipped_pdf_files_count,
-                "reconciliation_equation": f"{total_discovered_pdfs} == {processed_pdf_files_count} + {quarantined_pdf_files_count} + {skipped_pdf_files_count}",
-                "reconciliation_valid": (total_discovered_pdfs == processed_pdf_files_count + quarantined_pdf_files_count + skipped_pdf_files_count),
+                "discovered": total_canonical,
+                "processed": processed_count,
+                "quarantined": failed_count + unresolved_count,
+                "explicitly_skipped": skipped_count,
+                "reconciliation_equation": f"{total_canonical} == {processed_count} + {failed_count + unresolved_count} + {skipped_count}",
+                "reconciliation_valid": (total_canonical == processed_count + failed_count + unresolved_count + skipped_count),
             },
-            "logical_source_records": {
-                "discovered": total_discovered_pdfs,
-                "processed": processed_pdf_files_count,
-                "quarantined": quarantined_pdf_files_count,
-                "explicitly_skipped": skipped_pdf_files_count,
-                "reconciliation_equation": f"{total_discovered_pdfs} == {processed_pdf_files_count} + {quarantined_pdf_files_count} + {skipped_pdf_files_count}",
-                "reconciliation_valid": (total_discovered_pdfs == processed_pdf_files_count + quarantined_pdf_files_count + skipped_pdf_files_count),
-            },
-            "pdf_records": {
-                "discovered": total_discovered_pdfs,
-                "processed": processed_pdf_files_count,
-                "quarantined": quarantined_pdf_files_count,
-                "explicitly_skipped": skipped_pdf_files_count,
-                "reconciliation_equation": f"{total_discovered_pdfs} == {processed_pdf_files_count} + {quarantined_pdf_files_count} + {skipped_pdf_files_count}",
-                "reconciliation_valid": (total_discovered_pdfs == processed_pdf_files_count + quarantined_pdf_files_count + skipped_pdf_files_count),
-            },
-            "pdf_file_accounting": {
-                "discovered_pdf_files": total_discovered_pdfs,
-                "processed_pdf_files": processed_pdf_files_count,
-                "quarantined_pdf_files": quarantined_pdf_files_count,
-                "skipped_pdf_files": skipped_pdf_files_count,
-                "reconciliation_equation": f"{total_discovered_pdfs} == {processed_pdf_files_count} + {quarantined_pdf_files_count} + {skipped_pdf_files_count}",
-                "reconciliation_valid": (total_discovered_pdfs == processed_pdf_files_count + quarantined_pdf_files_count + skipped_pdf_files_count),
+            "canonical_reconciliation": {
+                "canonical_records": total_canonical,
+                "processed": processed_count,
+                "failed": failed_count,
+                "skipped": skipped_count,
+                "unresolved": unresolved_count,
+                "reconciliation_formula": f"{processed_count} + {failed_count} + {skipped_count} + {unresolved_count} == {total_canonical}",
+                "reconciliation_valid": (total_canonical == processed_count + failed_count + skipped_count + unresolved_count),
+                "documents_with_chunks": docs_with_chunks,
+                "documents_without_chunks": docs_without_chunks,
+                "failed_records_detail": failed_records,
+                "unresolved_records_detail": unresolved_records,
             },
             "chunk_accounting": {
                 "total_raw_chunks": total_raw_chunks_count,
@@ -394,55 +516,47 @@ class IngestionPipeline:
             json.dump(quality_report, f, indent=2, ensure_ascii=False)
         log.info(f"Generated Phase 1 Data Quality Report at {self.report_path} (Runtime: {elapsed_time}s)")
 
-        self._print_summary(
-            total_discovered=total_discovered_pdfs,
-            processed=processed_pdf_files_count,
-            quarantined=quarantined_pdf_files_count,
-            skipped=skipped_pdf_files_count,
-            total_raw_chunks=total_raw_chunks_count,
-            unique_chunks=unique_chunks,
-            duplicates=duplicates_eliminated,
+        self._print_reconciliation(
+            total_canonical=total_canonical,
+            processed=processed_count,
+            failed=failed_count,
+            skipped=skipped_count,
+            unresolved=unresolved_count,
+            total_chunks=unique_chunks,
+            docs_with_chunks=docs_with_chunks,
+            docs_without_chunks=docs_without_chunks,
             elapsed_time=elapsed_time,
         )
 
         return all_chunks
 
-    def _print_summary(
+    def _print_reconciliation(
         self,
-        total_discovered: int,
+        total_canonical: int,
         processed: int,
-        quarantined: int,
+        failed: int,
         skipped: int,
-        total_raw_chunks: int,
-        unique_chunks: int,
-        duplicates: int,
+        unresolved: int,
+        total_chunks: int,
+        docs_with_chunks: int,
+        docs_without_chunks: int,
         elapsed_time: float,
     ):
-        print("\n" + "=" * 78)
-        print("PHASE 1 — FULL PDF CORPUS INGESTION SUMMARY")
-        print("=" * 78)
-        print(f"Runtime: {elapsed_time}s | Source Directory: {self.pdf_dir}")
-        print("\n1. PDF FILE POPULATION ACCOUNTING:")
-        print(f"  • Discovered PDF files:     {total_discovered}")
-        print(f"  • Processed PDF files:      {processed}")
-        print(f"  • Quarantined PDF files:    {quarantined}")
-        print(f"  • Skipped PDF files:        {skipped}")
-        print(f"  • Reconciliation Formula:   {total_discovered} == {processed} + {quarantined} + {skipped}")
-        print(f"  • Accounting Match:         {'PASSED' if total_discovered == processed + quarantined + skipped else 'FAILED'}")
-
-        print("\n2. CHUNK POPULATION ACCOUNTING:")
-        print(f"  • Total raw chunks:         {total_raw_chunks}")
-        print(f"  • Unique chunks:            {unique_chunks}")
-        print(f"  • Duplicates eliminated:    {duplicates}")
-        print(f"  • Reconciliation Formula:   {total_raw_chunks} == {unique_chunks} + {duplicates}")
-        print(f"  • Chunk Match:              {'PASSED' if total_raw_chunks == unique_chunks + duplicates else 'FAILED'}")
-
-        print("\n3. OUTPUT & ARTIFACT STATUS:")
-        print(f"  • Output Chunk File:        {self.out_path} ({unique_chunks} verified chunks)")
-        print(f"  • Data Quality Report:      {self.report_path}")
-        print(f"  • Checkpoint File:          {self.checkpoint_path}")
-        print(f"  • Quarantine Log:           {self.quarantine_path}")
-        print("=" * 78 + "\n")
+        print("\n" + "=" * 60)
+        print("PHASE 2 — PROCESSING PIPELINE RECONCILIATION")
+        print("=" * 60)
+        print(f"CANONICAL RECORDS:\n{total_canonical}\n")
+        print(f"PROCESSED:\n{processed}\n")
+        print(f"FAILED:\n{failed}\n")
+        print(f"SKIPPED:\n{skipped}\n")
+        print(f"UNRESOLVED:\n{unresolved}\n")
+        print(f"RECONCILIATION:\n{processed} + {failed} + {skipped} + {unresolved} = {total_canonical}\n")
+        print(f"TOTAL CHUNKS:\n{total_chunks}\n")
+        print(f"DOCUMENTS WITH CHUNKS:\n{docs_with_chunks}\n")
+        print(f"DOCUMENTS WITHOUT CHUNKS:\n{docs_without_chunks}\n")
+        print(f"OUTPUT:\n{self.out_path.resolve()}\n")
+        print(f"CHECKPOINT:\n{self.checkpoint_path.resolve()}")
+        print("=" * 60 + "\n")
 
     def run_baseline_mode(self) -> List[ChunkRecord]:
         """Runs the legacy 1,000-source baseline ingestion mode for backward compatibility."""
@@ -569,18 +683,23 @@ class IngestionPipeline:
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
     parser = argparse.ArgumentParser(description="BIS PDF Corpus Parser & Ingestion Pipeline")
     parser.add_argument("--mode", default="full", choices=["full", "baseline"], help="Ingestion mode: 'full' (default) or 'baseline'")
     parser.add_argument("--raw_dir", default="./raw_data", help="Path to raw_data directory")
-    parser.add_argument("--pdf_dir", default=None, help="Path to PDF source directory (default: raw_data/pdfs)")
+    parser.add_argument("--pdf_dir", default=None, help="Path to PDF source directory")
     parser.add_argument("--out", default="./processed_chunks.jsonl", help="Output path for processed_chunks.jsonl")
+    parser.add_argument("--out_path", default=None, help="Alias for --out")
     parser.add_argument("--manifest", default=None, help="Path to manifest JSONL file")
     parser.add_argument("--checkpoint", default=None, help="Path to checkpoint file")
     parser.add_argument("--dataset_name", default=None, help="Dataset identifier name")
     parser.add_argument("--workers", type=int, default=8, help="Number of concurrent worker threads")
-    parser.add_argument("--max_limit", type=int, default=1000, help="Maximum allowed records in baseline mode")
+    parser.add_argument("--max_limit", type=int, default=None, help="Maximum allowed records (for smoke testing / limits)")
     args = parser.parse_args()
 
+    out_file = args.out_path or args.out
     manifest_path = Path(args.manifest) if args.manifest else None
     checkpoint_path = Path(args.checkpoint) if args.checkpoint else None
     pdf_dir_path = Path(args.pdf_dir) if args.pdf_dir else None
@@ -588,7 +707,7 @@ def main():
     pipeline = IngestionPipeline(
         raw_dir=Path(args.raw_dir),
         pdf_dir=pdf_dir_path,
-        out_path=Path(args.out),
+        out_path=Path(out_file),
         manifest_path=manifest_path,
         checkpoint_path=checkpoint_path,
         mode=args.mode,

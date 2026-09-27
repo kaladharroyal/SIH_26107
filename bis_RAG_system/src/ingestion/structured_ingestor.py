@@ -22,9 +22,169 @@ class StructuredIngestor:
     def extract_product_standard_map(self, manifest_records: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Extracts verified product-to-standard mapping records strictly from the supplied baseline manifest records.
+        Identifies explicit product-standard associations from the source structure/text, supports multiple
+        mappings per page, eliminates guesswork, and avoids scheme inference from standard numbers.
         """
         mappings: List[Dict[str, Any]] = []
         seen_pairs = set()
+
+        branch_codes = {
+            "AHBO", "BHBO", "BNBO", "BPBO", "CHBO", "CNBO", "CTBO", "DHBO", "DLBO",
+            "FRBO", "GZBO", "HRBO", "HUBO", "JDBO", "JKBO", "JPBO", "KKBO", "KOBO",
+            "LKBO", "MUBO", "NGBO", "NOBO", "PNBO", "PRBO", "PTBO", "RJBO", "SUBO",
+            "GDBO", "VJBO", "RPBO", "HYBO", "GHBO", "BO"
+        }
+
+        blacklist_products = {
+            "english", "hindi", "bureau of indian standards", "know your standards",
+            "click here", "home", "sitemap", "customer feedback", "log in",
+            "orders", "wish list", "forgot password", "advance search", "scope",
+            "free amendments", "table of contents", "basic details", "other details",
+            "classification details", "cross reference details", "license", "laboratory",
+            "part 1", "part 2", "part 3", "part 4", "part 5", "section 1", "section 2",
+            "list of licenses", "list of standards", "specification", "indian standard",
+            "indian standards", "standards", "amendment", "amendments", "annex a", "annex b",
+            "list of expired or cancelled licenses under is", "list of laboratories for"
+        }
+
+        tech_split_regex = r"(?:Technical\s*Committe?e?|Status\s*:|Login\s*to\s*Download|Price\s*:|No\.\s*of\s*Amendments|Reaffirmed\s*\d{4}|1\.?\s*SCOPE|1\.1\s*SCOPE|\bSCOPE\b|(?:ICS|CED|MTD|CHD|ETD|TXD|FAD|UDC|PGD|PCD|MSD|TED)\s*\d+|Reaffirmed\b|First Revision|Second Revision|Third Revision|Fourth Revision|Fifth Revision)"
+
+        def clean_product_name(prod: str) -> str:
+            p = prod.strip()
+            words = p.split()
+            if words and (words[0].upper() in branch_codes or any(words[0].upper().startswith(b) for b in branch_codes)):
+                p = " ".join(words[1:])
+            p = re.sub(r"^\d+\s*[-.)]?\s*", "", p)
+            p = re.sub(r"^\(Reaffirmed\s+Year\s*:\s*\d{4}\)\s*", "", p, flags=re.IGNORECASE)
+            p = re.sub(r"^Reaffirmed\s+\d{4}\s*", "", p, flags=re.IGNORECASE)
+            p = re.split(tech_split_regex, p, flags=re.IGNORECASE)[0]
+            p = re.sub(r"\s+and\s+other\s+Indian\s+Standards.*$", "", p, flags=re.IGNORECASE)
+            p = re.sub(r"\s+and\s+other\s+related\s+ISS.*$", "", p, flags=re.IGNORECASE)
+            p = re.sub(r"\s+etc\.?$", "", p, flags=re.IGNORECASE)
+            p = re.sub(r"\s*\((?:first|second|third|fourth|fifth|sixth|seventh|eighth|[a-z0-9\s]+)\s*revision\)", "", p, flags=re.IGNORECASE)
+            p = re.sub(r"\s*-\s*Specification\s*\(?$", "", p, flags=re.IGNORECASE)
+            p = re.sub(r"\s*Specification\s*\(?$", "", p, flags=re.IGNORECASE)
+            p = re.sub(r"[\s\(\)\-]+$", "", p)
+            p = p.strip()
+            return p
+
+        def is_valid_product(prod: str) -> bool:
+            if not prod or len(prod) < 4 or len(prod) > 150:
+                return False
+            low = prod.lower()
+            if low in blacklist_products:
+                return False
+            if any(b in low for b in [
+                "click here", "sitemap", "customer feedback", "forgot password",
+                "know your standards", "list of licenses", "list of expired",
+                "list of laboratories", "bureau of indian standards",
+                "and other indian standards", "date of enforcement",
+                "quality control order", "classification details",
+                "price :", "login to download", "no. of amendments"
+            ]):
+                return False
+            if low.startswith("http") or low.startswith("www."):
+                return False
+            if re.match(r"^part\s*\d+", low) or re.match(r"^section\s*\d+", low):
+                return False
+            if low.startswith("is ") or low.startswith("and is ") or low.startswith("amd") or "amendment" in low:
+                return False
+            if not re.search(r"[A-Za-z]", prod):
+                return False
+            return True
+
+        def extract_explicit_associations(page_text: str, page_url: str, source_hash: str) -> List[Dict[str, Any]]:
+            extracted = []
+            lines = page_text.split("\n")
+
+            # Check if page_text is a single standard preview document
+            preview_match = re.search(
+                r"IS\s*(\d{2,6})\s*[:\-_]?\s*(\d{4})?\s*[:\-_–]?\s*([A-Za-z0-9][^\n\r]+?)" + tech_split_regex,
+                page_text[:600],
+                re.IGNORECASE,
+            )
+            if not preview_match:
+                preview_match = re.search(
+                    r"IS\s*(\d{2,6})\s*[:\-_]?\s*(\d{4})?\s*[:\-_–]?\s*([A-Za-z0-9][^\n\r]+?)(?:\s*\n|$)",
+                    page_text[:400],
+                )
+            if preview_match:
+                std_num = f"IS {preview_match.group(1).strip()}"
+                rev_yr = preview_match.group(2).strip() if preview_match.group(2) else None
+                prod = clean_product_name(preview_match.group(3))
+                if is_valid_product(prod):
+                    evidence = preview_match.group(0)[:200].replace("\n", " ").strip()
+                    extracted.append({
+                        "product": prod,
+                        "standard": std_num,
+                        "revision_year": rev_yr,
+                        "scheme": None,
+                        "mandatory": False,
+                        "source_url": page_url,
+                        "source_hash": source_hash,
+                        "source_type": "product_standard_mapping",
+                        "source_of_truth": "bis_source_explicit_association",
+                        "verification_status": "source_explicit",
+                        "evidence": evidence,
+                    })
+
+            # Line-by-line / block extraction for structured factsheets or tables
+            for line in lines:
+                line_clean = line.strip()
+                if not line_clean or len(line_clean) < 8:
+                    continue
+
+                # Pattern 1: IS <num> : <yr> (<Prod> - Specification) or IS <num> <Prod>
+                for m in re.finditer(
+                    r"\bIS\s*[:\-_]?\s*(\d{2,6})(?:\s*[:\-_]\s*(\d{4}))?\s*[:\-_–]?\s*(?:\(([^)]+)\)|([A-Za-z][A-Za-z0-9\s,\-\/]+?))(?=\s+and\s+IS|\s*\(|\s*\n|$|\s*-\s*Specification|\s*;\s*IS)",
+                    line_clean,
+                ):
+                    std = f"IS {m.group(1).strip()}"
+                    yr = m.group(2).strip() if m.group(2) else None
+                    prod = m.group(3) or m.group(4)
+                    if prod:
+                        prod = clean_product_name(prod)
+                        if is_valid_product(prod) and not prod.startswith("IS "):
+                            extracted.append({
+                                "product": prod,
+                                "standard": std,
+                                "revision_year": yr,
+                                "scheme": None,
+                                "mandatory": False,
+                                "source_url": page_url,
+                                "source_hash": source_hash,
+                                "source_type": "product_standard_mapping",
+                                "source_of_truth": "bis_source_explicit_association",
+                                "verification_status": "source_explicit",
+                                "evidence": line_clean[:200],
+                            })
+
+                # Pattern 2: Product Name (IS 1786, IS 2062) or Product Name - IS 1786, IS 2062
+                m_rev = re.search(
+                    r"^([A-Za-z0-9\s,\-\/\.]+?)\s*(?:[-–:]|\()\s*IS\s*[:\-_]?\s*(\d{2,6})(?:\s*[:\-_]\s*(\d{4}))?(?:[,\s]+IS\s*[:\-_]?\s*(\d{2,6}))*",
+                    line_clean,
+                )
+                if m_rev:
+                    prod_candidate = clean_product_name(m_rev.group(1))
+                    if is_valid_product(prod_candidate):
+                        for is_m in re.finditer(r"\bIS\s*[:\-_]?\s*(\d{2,6})(?:\s*[:\-_]\s*(\d{4}))?\b", line_clean):
+                            std = f"IS {is_m.group(1).strip()}"
+                            yr = is_m.group(2).strip() if is_m.group(2) else None
+                            extracted.append({
+                                "product": prod_candidate,
+                                "standard": std,
+                                "revision_year": yr,
+                                "scheme": None,
+                                "mandatory": False,
+                                "source_url": page_url,
+                                "source_hash": source_hash,
+                                "source_type": "product_standard_mapping",
+                                "source_of_truth": "bis_source_explicit_association",
+                                "verification_status": "source_explicit",
+                                "evidence": line_clean[:200],
+                            })
+
+            return extracted
 
         # Filter strictly to product_standard_mapping baseline records
         psm_records = [
@@ -56,63 +216,16 @@ class StructuredIngestor:
                     data = json.load(f)
 
                 if isinstance(data, list) and data:
-                    item = data[0]
-                    page_text = item.get("page_text", "")
-                    page_url = item.get("page_url", source_url)
+                    for item in data:
+                        page_text = item.get("page_text", "")
+                        page_url = item.get("page_url", source_url)
 
-                    # Extract standard number from URL or text
-                    id_m = re.search(r"[?&]id=(\d+)(?:_(\d{4}))?", page_url)
-                    stdno_m = re.search(r"stdno=IS[\s_:-]*(\d+)", page_url)
-                    
-                    is_num = None
-                    year = None
-                    if id_m:
-                        is_num = f"IS {id_m.group(1)}"
-                        year = id_m.group(2) if id_m.group(2) else None
-                    elif stdno_m:
-                        is_num = f"IS {stdno_m.group(1)}"
-                    else:
-                        text_is = re.search(r"\bIS\s*[:\-_]?\s*(\d{2,6})(?:[\s:\-–]*(\d{4}))?", page_text)
-                        if text_is:
-                            is_num = f"IS {text_is.group(1)}"
-                            year = text_is.group(2) if text_is.group(2) else None
-
-                    # Extract product / scope name from title or SCOPE section
-                    product_title = ""
-                    title_m = re.search(
-                        r"IS\s*\d+[\s:\-–]*\d{0,4}\s+([A-Za-z0-9\s,\-\(\)\/\.]+?)(?:UDC|ICS|MTD|CHD|ETD|CED|TXD|\d+\s*Scope|\d+\.\s*SCOPE|$)",
-                        page_text,
-                    )
-                    if title_m and len(title_m.group(1).strip()) > 3:
-                        product_title = title_m.group(1).strip()
-                    else:
-                        scope_m = re.search(
-                            r"(?:SCOPE|Scope)\s*(?:1\.1\s*)?(?:This\s+(?:standard|specification|method)\s+(?:covers|prescribes|specifies|lays down|gives)[^\.\n]*?(?:for|of|the)?\s+([^\.\n]{5,120}))",
-                            page_text,
-                            re.IGNORECASE,
-                        )
-                        if scope_m:
-                            product_title = scope_m.group(1).strip()
-                        elif " " in page_text[:100]:
-                            first_line = page_text[:100].split("\n")[0].strip()
-                            if len(first_line) > 5 and not first_line.startswith("http"):
-                                product_title = first_line
-
-                    if is_num and product_title:
-                        pair_key = (product_title.lower(), is_num)
-                        if pair_key not in seen_pairs:
-                            seen_pairs.add(pair_key)
-                            mappings.append({
-                                "product": product_title,
-                                "standard": is_num,
-                                "revision_year": year,
-                                "scheme": "Scheme-I (ISI Mark)" if "1" in is_num else "CRS (Compulsory Registration Scheme)",
-                                "mandatory": True if "mandatory" in page_text.lower() or "qco" in page_text.lower() else False,
-                                "source_url": page_url,
-                                "source_hash": source_hash,
-                                "source_type": "product_standard_mapping",
-                                "source_of_truth": "verified_bis_api",
-                            })
+                        records = extract_explicit_associations(page_text, page_url, source_hash)
+                        for rec in records:
+                            pair_key = (rec["product"].lower(), rec["standard"])
+                            if pair_key not in seen_pairs:
+                                seen_pairs.add(pair_key)
+                                mappings.append(rec)
 
             except Exception as e:
                 log.warning(f"Error parsing {filename} for product map: {e}")
@@ -121,13 +234,13 @@ class StructuredIngestor:
             "dataset_name": "product_standard_map",
             "total_records": len(mappings),
             "records": mappings,
-            "status": "verified" if mappings else "unavailable",
+            "status": "source_validated" if mappings else "unavailable",
         }
 
         out_path = self.output_dir / "product_standard_map.json"
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(result, f, indent=2, ensure_ascii=False)
-        log.info(f"Saved {len(mappings)} verified product-standard mappings strictly from baseline to {out_path}")
+        log.info(f"Saved {len(mappings)} source-validated product-standard mappings strictly from baseline to {out_path}")
         return result
 
     def extract_labs_directory(self, manifest_records: List[Dict[str, Any]]) -> Dict[str, Any]:
