@@ -16,6 +16,7 @@ from guardrails import GuardrailGate
 from lab_locator import LabLocator
 from multilingual import MultilingualHandler
 from product_recommender import ProductRecommender
+from qdrant_retrieval import QdrantHybridRetriever
 from retrieval import HybridRetrievalPipeline
 from router import QueryIntentRouter
 from scheme_walkthrough import SchemeWalkthroughGuide
@@ -36,16 +37,22 @@ class BISRAGPipeline:
         confidence_threshold: float = 0.45,
         llm_provider: Optional[str] = None,
         use_mock_retrieval: bool = False,
-        use_fast_retrieval: bool = True,
+        use_fast_retrieval: bool = False,
     ):
         self.use_fast_retrieval = use_fast_retrieval
         log.info(f"Initializing BIS RAG Pipeline (Fast Retrieval Mode: {self.use_fast_retrieval})...")
         self.router = QueryIntentRouter()
         self.multilingual = MultilingualHandler()
         self.translation_engine = TranslationEngine()
-        
-        # When fast retrieval is enabled, skip loading heavy neural encoders into memory
-        encoder_mock = True if self.use_fast_retrieval else use_mock_retrieval
+
+        # Production Qdrant Cloud + BGE-M3 Hybrid Retriever
+        if not use_mock_retrieval and not self.use_fast_retrieval:
+            self.qdrant_retriever: Optional[QdrantHybridRetriever] = QdrantHybridRetriever()
+        else:
+            self.qdrant_retriever = None
+
+        # When fast retrieval or Qdrant Cloud retriever is active, skip loading heavy neural encoders for legacy retrieval
+        encoder_mock = True if (self.use_fast_retrieval or self.qdrant_retriever is not None) else use_mock_retrieval
         self.retrieval = HybridRetrievalPipeline(use_mock_encoder=encoder_mock)
         self.guardrail = GuardrailGate(threshold=confidence_threshold)
         self.generator = GroundedGenerator(provider_name=llm_provider)
@@ -221,13 +228,55 @@ class BISRAGPipeline:
 
         # 3. Grounded RAG Pipeline Execution (Phases 1-3)
         t_ret_start = time.time()
-        if self.use_fast_retrieval:
+        if self.qdrant_retriever is not None:
+            log.info(f"Executing Qdrant Cloud Hybrid Retrieval for search query: '{search_query[:40]}' (BGE-M3 + BM25 + RRF)")
+            hybrid_out = self.qdrant_retriever.retrieve_hybrid(search_query, top_k=top_n, rrf_k=60)
+            fused_hits = hybrid_out.get("hybrid_results", [])
+            retrieved_chunks = []
+            for hit in fused_hits:
+                retrieved_chunks.append({
+                    "rank": hit["rank"],
+                    "chunk_id": hit["chunk_id"],
+                    "score": hit["rrf_score"],
+                    "rrf_score": hit["rrf_score"],
+                    "bm25_rank": hit.get("bm25_rank"),
+                    "bge_rank": hit.get("bge_rank"),
+                    "bm25_score": hit.get("bm25_score"),
+                    "bge_score": hit.get("bge_score"),
+                    "text": hit["text"],
+                    "source_pdf": hit["source_pdf"],
+                    "page": hit["page"],
+                    "standard": hit["standard"],
+                    "category": hit["category"],
+                    "title": hit["title"],
+                    "source_url": hit.get("source_url", ""),
+                    "source_of_truth": hit.get("source_of_truth", "verified_bis_pdf"),
+                    "doc": {
+                        "chunk_id": hit["chunk_id"],
+                        "text": hit["text"],
+                        "source_pdf": hit["source_pdf"],
+                        "source_file": hit["source_pdf"],
+                        "page": hit["page"],
+                        "page_range": hit["page"],
+                        "standard": hit["standard"],
+                        "is_number": hit["standard"],
+                        "category": hit["category"],
+                        "title": hit["title"],
+                        "clause_title": hit["title"],
+                        "source_url": hit.get("source_url", ""),
+                        "source_of_truth": hit.get("source_of_truth", "verified_bis_pdf"),
+                    },
+                })
+            latencies = hybrid_out.get("latencies", {})
+            retrieval_ms = latencies.get("total_hybrid_ms", round((time.time() - t_ret_start) * 1000, 2))
+        elif self.use_fast_retrieval:
             log.info(f"Executing Fast Retrieval Pipeline for search query: '{search_query[:40]}' (Category: {effective_category})")
             retrieved_chunks = self.retrieval.retrieve_fast(search_query, top_n=top_n, category=effective_category)
             if not retrieved_chunks and effective_category is not None:
                 log.info(f"Scoped category '{effective_category}' yielded 0 hits; falling back to broad fast retrieval.")
                 retrieved_chunks = self.retrieval.retrieve_fast(search_query, top_n=top_n, category=None)
                 effective_category = "broad_fallback"
+            retrieval_ms = round((time.time() - t_ret_start) * 1000, 2)
         else:
             log.info(f"Executing Full Hybrid Retrieval Pipeline for search query: '{search_query[:40]}' (Category: {effective_category})")
             retrieved_chunks = self.retrieval.retrieve(search_query, top_n=top_n, category=effective_category)
@@ -235,7 +284,7 @@ class BISRAGPipeline:
                 log.info(f"Scoped category '{effective_category}' yielded 0 hits; falling back to broad retrieval.")
                 retrieved_chunks = self.retrieval.retrieve(search_query, top_n=top_n, category=None)
                 effective_category = "broad_fallback"
-        retrieval_ms = round((time.time() - t_ret_start) * 1000, 2)
+            retrieval_ms = round((time.time() - t_ret_start) * 1000, 2)
 
         # Evidence sufficiency & uncertainty refusal gate
         passed, confidence, refusal_msg = self.guardrail.evaluate_and_gate(
@@ -263,7 +312,10 @@ class BISRAGPipeline:
                 "confidence_type": "retrieval_confidence",
                 "category_used": effective_category,
                 "response": localized_refusal,
-                "results": None,
+                "results": {
+                    "retriever": "QdrantHybridRetriever" if self.qdrant_retriever is not None else "HybridRetrievalPipeline",
+                    "chunks_count": len(retrieved_chunks),
+                },
                 "retrieved_chunks": retrieved_chunks,
                 "citations": [],
                 "fallback_used": True,
@@ -311,6 +363,8 @@ class BISRAGPipeline:
                 "model_used": gen_result.get("model_used", "unknown"),
                 "provider": gen_result.get("provider", "unknown"),
                 "chunks_count": len(retrieved_chunks),
+                "retriever": "QdrantHybridRetriever" if self.qdrant_retriever is not None else "HybridRetrievalPipeline",
+                "embedding_model": "BAAI/bge-m3" if self.qdrant_retriever is not None else "none",
             },
             "citations": citation_result["citations_list"],
             "citation_validation": citation_result.get("validation", {}),

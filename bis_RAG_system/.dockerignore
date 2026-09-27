@@ -1,0 +1,116 @@
+# ==============================================================================
+# BIS RAG SYSTEM — Docker Ignore
+# Excludes sensitive data, heavy corpus, local vector stores, and temporary files
+# ==============================================================================
+
+# Git & IDE Configuration
+.git/
+.gitignore
+.gitattributes
+.github/
+.idea/
+.vscode/
+.planning/
+.agents/
+
+# Environment files & Secrets — NEVER copy into image
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+
+# Python runtime artifacts & caches
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Local Qdrant Storage — NEVER copy into image
+qdrant_storage/
+**/qdrant_storage/
+
+# Raw Corpus & PDF Files — NEVER copy into image
+raw_data/
+**/raw_data/
+bis_data/
+**/bis_data/
+*.pdf
+**/*.pdf
+
+# Generated Chunk Corpus — NEVER copy into image
+processed_chunks.jsonl
+**/processed_chunks.jsonl
+processed_chunks_legacy_backup.jsonl
+**/processed_chunks_legacy_backup.jsonl
+classified_data/
+**/classified_data/
+
+# Generated Vector & Model Artifacts
+*.pkl
+**/*.pkl
+*.npy
+**/*.npy
+*.npz
+**/*.npz
+*.faiss
+**/*.faiss
+*.index
+**/*.index
+vector_index/
+**/vector_index/
+
+# Ingestion & Migration Checkpoints and Logs
+*checkpoint*.json
+**/*checkpoint*.json
+*.log
+**/*.log
+logs/
+**/logs/
+*manifest*.jsonl
+**/*manifest*.jsonl
+*quarantine*.jsonl
+**/*quarantine*.jsonl
+*recovery*.jsonl
+**/*recovery*.jsonl
+*cleanup*.jsonl
+**/*cleanup*.jsonl
+*registry*.jsonl
+**/*registry*.jsonl
+
+# Test execution outputs
+tests/results/
+**/tests/results/
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary & Scratch files
+*.tmp
+*.part
+*.bak
+*.old
+scratch/
+warning_downloads.txt
+product_standard_map_TEST.json
+REMEDIATION_NOTES.txt
+trash/
+**/trash/

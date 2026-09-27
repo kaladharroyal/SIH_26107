@@ -61,7 +61,7 @@ Preserve uncertainty when the evidence is ambiguous.
 
 Use the source information supplied with the evidence when making factual claims.
 
-When citing standards, clauses, or documents, include the applicable Indian Standard designation or document reference in brackets (for example: [IS 1786], [IS 269], or [IS 1489]), corresponding strictly to the supplied evidence."""
+When citing standards, clauses, or documents, include the applicable Indian Standard designation or document reference in brackets (for example: [IS 1786], [IS 269], or [IS 1489]), corresponding strictly to the supplied evidence. Do not output raw internal chunk IDs or hexadecimal hashes in brackets or anywhere in the answer. Cite only the standard designation (e.g. [IS 1786]) or document title."""
 
 
 class BaseLLMProvider(ABC):

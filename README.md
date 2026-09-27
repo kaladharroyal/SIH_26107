@@ -194,6 +194,45 @@ python run_pipeline.py "What BIS standard should I use for TMT steel bars?"
 python run_pipeline.py -i
 ```
 
+### Option C: Docker Container (Production Containerization)
+
+The application is fully containerized and connects to Qdrant Cloud and Google Gemini via environment variables.
+
+#### 1. Configure Environment
+Copy `.env.example` to `.env` and fill in your Qdrant Cloud and Gemini credentials:
+```bash
+cp .env.example .env
+```
+
+#### 2. Run with Docker Compose (Recommended)
+```bash
+# Build and start container in detached mode
+docker compose up -d --build
+
+# View container logs
+docker compose logs -f
+
+# Check container health status
+docker compose ps
+```
+
+#### 3. Standalone Docker Run
+```bash
+# Build production image
+docker build -t bis-rag-assistant:latest ./bis_RAG_system
+
+# Run container with environment file
+docker run -d \
+  --name bis_rag_assistant \
+  -p 8000:8000 \
+  --env-file ./bis_RAG_system/.env \
+  bis-rag-assistant:latest
+```
+
+The container exposes:
+- **Web UI & API**: `http://localhost:8000`
+- **Health Check**: `http://localhost:8000/health`
+
 ---
 
 ## 📡 REST API Reference

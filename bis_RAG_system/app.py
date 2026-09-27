@@ -102,7 +102,7 @@ async def enforce_demo_latency(start_time: float, min_seconds: float = DEMO_MIN_
 
 
 log.info(f"Initializing BIS RAG Pipeline for Web Server (Demo Min Latency: {DEMO_MIN_RESPONSE_SECONDS}s)...")
-pipeline = BISRAGPipeline(use_fast_retrieval=True)
+pipeline = BISRAGPipeline()
 feedback_logger = FeedbackLogger()
 
 

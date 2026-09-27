@@ -24,9 +24,17 @@ class CitationEngine:
     @staticmethod
     def extract_inline_citations(text: str) -> List[str]:
         """Extracts inline citation tags from generated response text."""
-        # Matches patterns like [IS 1786:2008, Clause 4.2], [As per IS 1417, Clause 3.1], [Per BIS Guidelines (Q.14)]
+        # Matches patterns like [IS 1786:2008, Clause 4.2], [As per IS 1417, Clause 3.1], [Per BIS Guidelines (Q.14)], or [chunk_id]
         matches = re.findall(r"\[(?:As per\s+|Per\s+)?([^\]]+)\]", text, re.IGNORECASE)
-        return [m.strip() for m in matches if any(k in m.lower() for k in ["is ", "is:", "is-", "clause", "bis", "faq", "q."])]
+        citations = []
+        for m in matches:
+            m_strip = m.strip()
+            if "open official bis" in m_strip.lower():
+                continue
+            if any(k in m_strip.lower() for k in ["is ", "is:", "is-", "clause", "bis", "faq", "q."]) or re.search(r"[a-f0-9]{16,64}", m_strip):
+                parts = [p.strip() for p in m_strip.split(",") if p.strip()]
+                citations.extend(parts)
+        return citations
 
     def validate_citations_against_context(
         self,
@@ -73,8 +81,8 @@ class CitationEngine:
             is_match = any(std in cite_clean for std in context_standards if len(std) > 2)
             # Clause match PLUS matching IS number
             clause_match = any(cl in cite.lower() for cl in context_clauses if len(cl) >= 1)
-            # F5: chunk_id match (e.g. MockOfflineProvider tags)
-            chunk_id_match = any(cid in cite_clean for cid in context_chunk_ids if len(cid) > 4)
+            # F5: chunk_id match (e.g. MockOfflineProvider tags or LLM hex tags)
+            chunk_id_match = any(cid in cite_clean or cite_clean in cid for cid in context_chunk_ids if len(cid) > 4)
 
             if is_match or chunk_id_match or (is_match and clause_match):
                 valid_citations.append(cite)
@@ -100,8 +108,8 @@ class CitationEngine:
         Deterministically selects the single strongest primary source document from retrieved context.
         Pseudo-logic:
         1. Prefer verified_bis_pdf with valid PDF source URL (.pdf or bis.gov.in/services.bis.gov.in) and high relevance/matching standard.
-        2. Otherwise prefer official BIS web URL.
-        3. Otherwise use the strongest retrieved official source.
+        2. Give high priority (+50) to chunks directly cited by the generator.
+        3. Formulate clean human-readable document titles.
         4. Append #page=N only if page number is reliably known and > 1.
         """
         if not context_chunks:
@@ -131,10 +139,19 @@ class CitationEngine:
 
             clause_no = doc.get("clause_number")
             source_url = (doc.get("source_url") or "").strip()
-            source_file = (doc.get("source_file") or "").strip()
+            source_file = (doc.get("source_file") or doc.get("source_pdf") or "").strip()
             source_of_truth = doc.get("source_of_truth", "")
             category = doc.get("category", "")
-            page_start = doc.get("page_start") or doc.get("page") or doc.get("pdf_page")
+            cid = str(doc.get("chunk_id") or "").lower()
+
+            page_raw = str(doc.get("page_start") or doc.get("page") or doc.get("page_range") or "").strip()
+            if "-" in page_raw:
+                parts = page_raw.split("-")
+                page_display = parts[0] if len(parts) == 2 and parts[0] == parts[1] else page_raw
+                start_page = parts[0]
+            else:
+                page_display = page_raw
+                start_page = page_raw
 
             # Score calculation
             score = 0
@@ -149,14 +166,28 @@ class CitationEngine:
                 is_pdf = True
             elif source_url and source_url.startswith("http"):
                 score += 20
+            elif source_file and "pdf" in source_file.lower():
+                score += 30
+                is_pdf = True
 
             # Match with emitted inline citations if provided
-            if inline_citations_emitted and is_no:
-                clean_is = is_no.lower().replace(" ", "").replace("-", "").replace(":", "")
+            if inline_citations_emitted:
                 for em in inline_citations_emitted:
-                    if clean_is in em.lower().replace(" ", "").replace("-", "").replace(":", ""):
-                        score += 25
+                    em_clean = em.lower().replace(" ", "").replace("-", "").replace(":", "")
+                    if is_no:
+                        clean_is = is_no.lower().replace(" ", "").replace("-", "").replace(":", "")
+                        if clean_is in em_clean:
+                            score += 50
+                            break
+                    if cid and (cid in em_clean or em_clean in cid):
+                        score += 50
                         break
+                    if source_file:
+                        stem = Path(source_file.replace("\\", "/")).stem
+                        clean_stem = re.sub(r"^[a-f0-9]{12}_", "", stem).lower().replace("_", "").replace("-", "")
+                        if clean_stem in em_clean or em_clean in clean_stem:
+                            score += 50
+                            break
 
             # Target URL resolution
             if source_url and source_url.startswith("http"):
@@ -168,8 +199,8 @@ class CitationEngine:
                 target_url = "https://www.bis.gov.in/"
 
             # Page parameter: only append if valid page > 1 and it's a PDF URL and #page is not already in URL
-            if page_start and str(page_start).isdigit() and int(page_start) > 1 and is_pdf and "#page=" not in target_url:
-                target_url = f"{target_url}#page={int(page_start)}"
+            if start_page and start_page.isdigit() and int(start_page) > 1 and is_pdf and "#page=" not in target_url:
+                target_url = f"{target_url}#page={int(start_page)}"
 
             # Standard / title display formulation
             if is_no and is_no.upper().startswith("IS"):
@@ -177,7 +208,17 @@ class CitationEngine:
                 display_title = full_std
             elif "scheme" in category.lower() or "scheme" in str(is_no).lower():
                 display_title = str(is_no or "Scheme I")
-            elif title and title != "Technical Specification" and len(title) < 50:
+            elif source_file:
+                stem = Path(source_file.replace("\\", "/")).stem
+                clean_stem = re.sub(r"^[a-f0-9]{12}_", "", stem)
+                clean_name = clean_stem.replace("_", " ").replace("-", " ").strip()
+                if len(clean_name) > 3 and not clean_name.startswith("news_"):
+                    display_title = clean_name
+                elif title and title != "Technical Specification" and not title.startswith("|") and len(title) < 50:
+                    display_title = title
+                else:
+                    display_title = "BIS Regulatory Record"
+            elif title and title != "Technical Specification" and not title.startswith("|") and len(title) < 50:
                 display_title = title
             else:
                 display_title = is_no or "BIS Compliance Record"
@@ -193,7 +234,7 @@ class CitationEngine:
                 "has_direct_link": bool(source_url or source_file),
                 "badge": "OFFICIAL_STANDARD" if (is_no and is_no.startswith("IS")) else ("FAQ_GUIDELINE" if "faq" in category else "REGULATORY_RECORD"),
                 "chunk_id": doc.get("chunk_id", ""),
-                "page": page_start,
+                "page": page_display,
             })
 
         scored_candidates.sort(key=lambda x: x["score"], reverse=True)
@@ -281,7 +322,7 @@ class CitationEngine:
                     "source_of_truth": source_of_truth,
                 })
 
-        # Validate inline citations present in generated response text
+        # Validate inline citations present in generated response text BEFORE stripping
         emitted_tags = self.extract_inline_citations(response_text)
         validation_info = self.validate_citations_against_context(emitted_tags, context_chunks)
 
@@ -290,6 +331,9 @@ class CitationEngine:
 
         # Clean existing raw/hallucinated source sections from response_text if present
         clean_response = re.sub(r"###\s*(?:Source|स्रोत|మూలం|📖\s*Official Verification Sources|Official Verification Sources).*$", "", response_text, flags=re.IGNORECASE | re.DOTALL).strip()
+
+        # Clean bracketed internal raw hexadecimal chunk IDs from clean_response
+        clean_response = re.sub(r"\s*\[[a-f0-9]{16,64}(?:\s*,\s*[a-f0-9]{16,64})*\]", "", clean_response)
 
         # Build clean single primary source card with language localization
         lang_lower = (language or "english").lower()
@@ -307,9 +351,12 @@ class CitationEngine:
         if "[Official Standard]" in seen_badges and "[FAQ Guideline]" in seen_badges:
             source_badge_str = " *([Official Standard] & [FAQ Guideline] verified)*"
 
+        page_str = f"Pages {primary_source['page']}\n" if primary_source.get("page") else ""
+
         source_block = (
             f"\n\n{header}\n\n"
             f"📄 **BIS — {primary_source['display_title']}**{source_badge_str}\n"
+            f"{page_str}"
             f"[{action_text} ↗]({primary_source['url']})"
         )
 

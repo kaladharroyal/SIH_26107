@@ -128,6 +128,8 @@ class QdrantHybridRetriever:
                 "title": doc.get("clause_title") or doc.get("product") or "",
                 "retriever": "bm25",
                 "score": float(hit.get("score", 0.0)),
+                "source_url": doc.get("source_url", ""),
+                "source_of_truth": doc.get("source_of_truth", "verified_bis_pdf"),
             })
         return results, latency_ms
 
@@ -152,17 +154,20 @@ class QdrantHybridRetriever:
         results: List[Dict[str, Any]] = []
         for rank, pt in enumerate(search_res.points, 1):
             payload = pt.payload or {}
+            meta = payload.get("metadata", {}) if isinstance(payload.get("metadata"), dict) else {}
             results.append({
                 "rank": rank,
                 "chunk_id": payload.get("chunk_id", ""),
                 "text": payload.get("text", ""),
-                "source_pdf": payload.get("source_pdf", ""),
-                "page": payload.get("page", ""),
-                "standard": payload.get("standard_number"),
-                "category": payload.get("category", ""),
-                "title": payload.get("document_title", ""),
+                "source_pdf": payload.get("source_pdf", "") or meta.get("source_file", ""),
+                "page": payload.get("page", "") or meta.get("page_range", ""),
+                "standard": payload.get("standard_number") or meta.get("is_number"),
+                "category": payload.get("category", "") or meta.get("category", ""),
+                "title": payload.get("document_title", "") or meta.get("clause_title", ""),
                 "retriever": "bge_m3",
                 "score": float(pt.score),
+                "source_url": meta.get("source_url", "") or payload.get("source_url", ""),
+                "source_of_truth": meta.get("source_of_truth", "") or payload.get("source_of_truth", "verified_bis_pdf"),
             })
         return results, t_embed, t_qdrant
 
@@ -202,6 +207,8 @@ class QdrantHybridRetriever:
                     "standard": item["standard"],
                     "category": item["category"],
                     "title": item["title"],
+                    "source_url": item.get("source_url", ""),
+                    "source_of_truth": item.get("source_of_truth", "verified_bis_pdf"),
                 }
 
         # Process BGE-M3 candidates
@@ -219,6 +226,8 @@ class QdrantHybridRetriever:
                     "standard": item["standard"],
                     "category": item["category"],
                     "title": item["title"],
+                    "source_url": item.get("source_url", ""),
+                    "source_of_truth": item.get("source_of_truth", "verified_bis_pdf"),
                 }
 
         # Sort descending by RRF score
@@ -241,6 +250,8 @@ class QdrantHybridRetriever:
                 "standard": meta["standard"],
                 "category": meta["category"],
                 "title": meta["title"],
+                "source_url": meta.get("source_url", ""),
+                "source_of_truth": meta.get("source_of_truth", "verified_bis_pdf"),
             })
 
         latency_ms = (time.perf_counter() - t0) * 1000
