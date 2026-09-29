@@ -10,13 +10,26 @@ import os
 import sys
 from pathlib import Path
 
+# Configure utf-8 encoding for Windows terminals
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 # Add src to path
 BASE_DIR = Path(__file__).resolve().parent
 SRC_DIR = BASE_DIR / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from rag_pipeline import BISRAGPipeline
+
+try:
+    from src import BISRAGPipeline
+except ImportError:
+    from src.core.rag_pipeline import BISRAGPipeline
+
 
 
 def run_interactive():
@@ -60,13 +73,14 @@ def main():
     parser = argparse.ArgumentParser(description="BIS AI Compliance RAG Pipeline Runner")
     parser.add_argument("query", nargs="?", default=None, help="Single query to process")
     parser.add_argument("--interactive", "-i", action="store_true", help="Start interactive CLI session")
+    parser.add_argument("--fast", "-f", action="store_true", help="Enable fast retrieval mode (skips heavy neural weights)")
 
     args = parser.parse_args()
 
     if args.interactive or not args.query:
         run_interactive()
     else:
-        pipeline = BISRAGPipeline()
+        pipeline = BISRAGPipeline(use_fast_retrieval=args.fast)
         res = pipeline.query(args.query)
         print("\n" + "=" * 70)
         print(f"🎯 INTENT:     {res.get('intent')}")
@@ -75,6 +89,7 @@ def main():
         print(f"⚙️  STATUS:     {res.get('status').upper()}")
         print("=" * 70 + "\n")
         print(res.get("response", "") + "\n")
+
 
 
 if __name__ == "__main__":

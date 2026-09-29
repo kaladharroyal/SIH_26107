@@ -15,21 +15,25 @@ import time
 from typing import Any, Dict, Optional
 import uuid
 
-# Add src, tests, and root to python path for modular imports
 BASE_DIR = Path(__file__).resolve().parent
-SRC_DIR = BASE_DIR / "src"
-TESTS_DIR = BASE_DIR / "tests"
-for path in [SRC_DIR, TESTS_DIR, BASE_DIR]:
-    if str(path) not in sys.path:
-        sys.path.insert(0, str(path))
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from feedback_logger import FeedbackLogger
-from rag_pipeline import BISRAGPipeline
+try:
+    from src import BISRAGPipeline, FeedbackLogger, STATIC_DIR, PROJECT_ROOT
+except ImportError:
+    from src.core.feedback_logger import FeedbackLogger
+    from src.core.rag_pipeline import BISRAGPipeline
+    PROJECT_ROOT = BASE_DIR
+    STATIC_DIR = BASE_DIR / "static"
+
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("bis_web_app")
@@ -130,11 +134,17 @@ async def health_check():
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index():
-    index_file = BASE_DIR / "index.html"
-    if index_file.exists():
-        with open(index_file, "r", encoding="utf-8") as f:
-            return f.read()
-    return "<h1>BIS AI Assistant Web Server is Running</h1>"
+    candidates = [
+        STATIC_DIR / "index.html",
+        BASE_DIR / "static" / "index.html",
+        BASE_DIR / "index.html",
+    ]
+    for p in candidates:
+        if p.exists():
+            with open(p, "r", encoding="utf-8") as f:
+                return f.read()
+    return "<h1>Bureau of Indian Standards (BIS) AI Assistant is Running</h1>"
+
 
 
 @app.post("/api/chat")

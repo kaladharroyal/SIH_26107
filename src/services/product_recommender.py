@@ -14,9 +14,17 @@ from typing import Any, Dict, List, Optional
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("product_recommender")
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+try:
+    from src.config import PRODUCT_STANDARD_MAP_PATH
+    DEFAULT_MAP_PATH = PRODUCT_STANDARD_MAP_PATH
+except ImportError:
+    BASE_DIR = Path(__file__).resolve().parent.parent.parent
+    DEFAULT_MAP_PATH = BASE_DIR / "data" / "product_standard_map.json"
+    if not DEFAULT_MAP_PATH.exists():
+        DEFAULT_MAP_PATH = BASE_DIR / "product_standard_map.json"
 
 # Common consumer/industry terms mapped to official technical product categories
+
 PRODUCT_ALIASES: Dict[str, str] = {
     "solar panel": "Photovoltaic Module",
     "solar panels": "Photovoltaic Module",
@@ -60,7 +68,7 @@ class ProductRecommender:
     """
 
     def __init__(self, map_path: Optional[Path] = None, retrieval_pipeline: Optional[Any] = None):
-        self.map_path = map_path or (BASE_DIR / "product_standard_map.json")
+        self.map_path = map_path or DEFAULT_MAP_PATH
         self.db: List[Dict[str, Any]] = self._load_product_map()
         self.retrieval = retrieval_pipeline
 

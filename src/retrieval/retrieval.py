@@ -28,9 +28,18 @@ import numpy as np
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("hybrid_retrieval")
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_CHUNKS_PATH = BASE_DIR / "processed_chunks.jsonl"
-DEFAULT_INDEX_DIR = BASE_DIR / "vector_index"
+try:
+    from src.config import PROCESSED_CHUNKS_PATH, VECTOR_INDEX_DIR
+    DEFAULT_CHUNKS_PATH = PROCESSED_CHUNKS_PATH
+    DEFAULT_INDEX_DIR = VECTOR_INDEX_DIR
+except ImportError:
+    BASE_DIR = Path(__file__).resolve().parent.parent.parent
+    DEFAULT_CHUNKS_PATH = BASE_DIR / "data" / "processed_chunks.jsonl"
+    if not DEFAULT_CHUNKS_PATH.exists():
+        DEFAULT_CHUNKS_PATH = BASE_DIR / "processed_chunks.jsonl"
+    DEFAULT_INDEX_DIR = BASE_DIR / "data" / "vector_index"
+    if not DEFAULT_INDEX_DIR.exists():
+        DEFAULT_INDEX_DIR = BASE_DIR / "vector_index"
 
 
 class BM25Index:

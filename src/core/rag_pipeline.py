@@ -9,18 +9,33 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
-from citation_engine import CitationEngine
-from consumer_complaint import ConsumerComplaintHandler
-from generator import GroundedGenerator
-from guardrails import GuardrailGate
-from lab_locator import LabLocator
-from multilingual import MultilingualHandler
-from product_recommender import ProductRecommender
-from qdrant_retrieval import QdrantHybridRetriever
-from retrieval import HybridRetrievalPipeline
-from router import QueryIntentRouter
-from scheme_walkthrough import SchemeWalkthroughGuide
-from translation_engine import TranslationEngine
+try:
+    from src.core.citation_engine import CitationEngine
+    from src.core.generator import GroundedGenerator
+    from src.core.guardrails import GuardrailGate
+    from src.core.multilingual import MultilingualHandler
+    from src.core.router import QueryIntentRouter
+    from src.core.translation_engine import TranslationEngine
+    from src.retrieval.qdrant_retrieval import QdrantHybridRetriever
+    from src.retrieval.retrieval import HybridRetrievalPipeline
+    from src.services.consumer_complaint import ConsumerComplaintHandler
+    from src.services.lab_locator import LabLocator
+    from src.services.product_recommender import ProductRecommender
+    from src.services.scheme_walkthrough import SchemeWalkthroughGuide
+except ImportError:
+    from citation_engine import CitationEngine
+    from generator import GroundedGenerator
+    from guardrails import GuardrailGate
+    from multilingual import MultilingualHandler
+    from router import QueryIntentRouter
+    from translation_engine import TranslationEngine
+    from qdrant_retrieval import QdrantHybridRetriever
+    from retrieval import HybridRetrievalPipeline
+    from consumer_complaint import ConsumerComplaintHandler
+    from lab_locator import LabLocator
+    from product_recommender import ProductRecommender
+    from scheme_walkthrough import SchemeWalkthroughGuide
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("rag_pipeline")
@@ -46,14 +61,18 @@ class BISRAGPipeline:
         self.translation_engine = TranslationEngine()
 
         # Production Qdrant Cloud + BGE-M3 Hybrid Retriever
+        self.qdrant_retriever: Optional[QdrantHybridRetriever] = None
         if not use_mock_retrieval and not self.use_fast_retrieval:
-            self.qdrant_retriever: Optional[QdrantHybridRetriever] = QdrantHybridRetriever()
-        else:
-            self.qdrant_retriever = None
+            try:
+                self.qdrant_retriever = QdrantHybridRetriever()
+            except (ImportError, ModuleNotFoundError, RuntimeError, Exception) as e:
+                log.info(f"Qdrant Cloud retriever unavailable ({e}). Falling back to local Hybrid Retrieval.")
+                self.qdrant_retriever = None
 
         # When fast retrieval or Qdrant Cloud retriever is active, skip loading heavy neural encoders for legacy retrieval
         encoder_mock = True if (self.use_fast_retrieval or self.qdrant_retriever is not None) else use_mock_retrieval
         self.retrieval = HybridRetrievalPipeline(use_mock_encoder=encoder_mock)
+
         self.guardrail = GuardrailGate(threshold=confidence_threshold)
         self.generator = GroundedGenerator(provider_name=llm_provider)
         self.citation_engine = CitationEngine()

@@ -13,15 +13,17 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from dotenv import load_dotenv
 
-# Resolve project base directory
-BASE_DIR = Path(__file__).resolve().parent.parent
-if str(BASE_DIR / "src") not in sys.path:
-    sys.path.insert(0, str(BASE_DIR / "src"))
-
-# Load environment configuration
-load_dotenv(BASE_DIR / ".env")
-
-from retrieval import BM25Index
+try:
+    from src.config import PROJECT_ROOT, QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION, VECTOR_INDEX_DIR
+    from src.retrieval.retrieval import BM25Index
+    DEFAULT_BM25_PATH = VECTOR_INDEX_DIR / "bm25_index.pkl"
+except ImportError:
+    BASE_DIR = Path(__file__).resolve().parent.parent.parent
+    load_dotenv(BASE_DIR / ".env")
+    from retrieval import BM25Index
+    DEFAULT_BM25_PATH = BASE_DIR / "data" / "vector_index" / "bm25_index.pkl"
+    if not DEFAULT_BM25_PATH.exists():
+        DEFAULT_BM25_PATH = BASE_DIR / "vector_index" / "bm25_index.pkl"
 
 
 class QdrantHybridRetriever:
@@ -51,7 +53,8 @@ class QdrantHybridRetriever:
         self.qdrant_url = qdrant_url or os.environ.get("QDRANT_URL")
         self.qdrant_api_key = qdrant_api_key or os.environ.get("QDRANT_API_KEY")
         self.collection_name = collection_name or os.environ.get("QDRANT_COLLECTION", "bis_chunks_bge_m3_v1")
-        self.bm25_path = Path(bm25_path) if bm25_path else (BASE_DIR / "vector_index" / "bm25_index.pkl")
+        self.bm25_path = Path(bm25_path) if bm25_path else DEFAULT_BM25_PATH
+
         self.model_name = model_name
 
         if not self.qdrant_url:

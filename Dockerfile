@@ -34,20 +34,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application source code and configuration (respecting .dockerignore)
 COPY --chown=appuser:appgroup app.py .
-COPY --chown=appuser:appgroup index.html .
-COPY --chown=appuser:appgroup product_standard_map.json .
-COPY --chown=appuser:appgroup labs_directory.json .
+COPY --chown=appuser:appgroup run_pipeline.py .
 COPY --chown=appuser:appgroup schema.sql .
 COPY --chown=appuser:appgroup sources.yaml .
-COPY --chown=appuser:appgroup phase1_data_quality_report.json .
-COPY --chown=appuser:appgroup src/ ./src/
-COPY --chown=appuser:appgroup static/ ./static/
-COPY --chown=appuser:appgroup scripts/ ./scripts/
-COPY --chown=appuser:appgroup tests/ ./tests/
-COPY --chown=appuser:appgroup processed_chunks.jsonl .
-COPY --chown=appuser:appgroup vector_index/bm25_index.pkl ./vector_index/bm25_index.pkl
 COPY --chown=appuser:appgroup .env.example .
 COPY --chown=appuser:appgroup README.md .
+COPY --chown=appuser:appgroup src/ ./src/
+COPY --chown=appuser:appgroup static/ ./static/
+COPY --chown=appuser:appgroup data/ ./data/
+COPY --chown=appuser:appgroup scripts/ ./scripts/
+COPY --chown=appuser:appgroup tests/ ./tests/
+COPY --chown=appuser:appgroup docs/ ./docs/
 
 # Ensure appuser owns /app directory for SQLite feedback logs and runtime files
 RUN chown -R appuser:appgroup /app

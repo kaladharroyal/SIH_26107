@@ -14,7 +14,15 @@ from typing import Any, Dict, List, Optional
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("lab_locator")
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+try:
+    from src.config import LABS_DIRECTORY_PATH
+    DEFAULT_LABS_PATH = LABS_DIRECTORY_PATH
+except ImportError:
+    BASE_DIR = Path(__file__).resolve().parent.parent.parent
+    DEFAULT_LABS_PATH = BASE_DIR / "data" / "labs_directory.json"
+    if not DEFAULT_LABS_PATH.exists():
+        DEFAULT_LABS_PATH = BASE_DIR / "labs_directory.json"
+
 OFFICIAL_LIMS_PORTAL = "https://lims.bis.gov.in/"
 
 
@@ -25,7 +33,7 @@ class LabLocator:
     """
 
     def __init__(self, labs_path: Optional[Path] = None, retrieval_pipeline: Optional[Any] = None):
-        self.labs_path = labs_path or (BASE_DIR / "labs_directory.json")
+        self.labs_path = labs_path or DEFAULT_LABS_PATH
         self.status = "unavailable"
         self.status_reason = ""
         self.labs: List[Dict[str, Any]] = self._load_labs()

@@ -18,10 +18,10 @@ log = logging.getLogger("generator")
 
 # Automatically load .env file if present
 def _load_env():
-    # Priority: Project root containing src (.env in bis_RAG_system)
+    # Priority: Project root containing src
     candidates = [
+        Path(__file__).resolve().parent.parent.parent / ".env",
         Path(__file__).resolve().parent.parent / ".env",
-        Path.cwd() / "bis_RAG_system" / ".env",
         Path.cwd() / ".env",
         Path(__file__).resolve().parent / ".env",
     ]

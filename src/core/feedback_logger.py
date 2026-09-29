@@ -11,9 +11,14 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-log = logging.getLogger("feedback_logger")
-
-DB_PATH = Path(__file__).resolve().parent.parent / "feedback_logs.db"
+try:
+    from src.config import FEEDBACK_DB_PATH
+    DB_PATH = FEEDBACK_DB_PATH
+except ImportError:
+    BASE_DIR = Path(__file__).resolve().parent.parent.parent
+    DB_PATH = BASE_DIR / "data" / "bis_rag_telemetry.db"
+    if not DB_PATH.exists():
+        DB_PATH = BASE_DIR / "feedback_logs.db"
 
 
 class FeedbackLogger:
