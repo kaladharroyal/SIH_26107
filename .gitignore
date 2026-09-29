@@ -35,6 +35,10 @@ venv.bak/
 # Original BIS source corpus
 raw_data/
 **/raw_data/
+amendments/
+**/amendments/
+data/raw/
+**/data/raw/
 bis_data/
 **/bis_data/
 
@@ -51,12 +55,17 @@ processed_chunks.jsonl
 processed_chunks_legacy_backup.jsonl
 **/processed_chunks_legacy_backup.jsonl
 
-# ------------------------------------------------------------------------------
 # Generated Vector / Index Artifacts
 # ------------------------------------------------------------------------------
 
+vector_index/
+**/vector_index/
+data/vector_index/
+**/data/vector_index/
+
 # Generated BM25 / pickle indexes
 *.pkl
+
 
 # Generated embedding/vector files
 *.npy

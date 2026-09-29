@@ -1,13 +1,13 @@
 version: '3.8'
 
 # ==============================================================================
-# Bureau of Indian Standards (BIS) AI Assistant — Docker Compose (Root)
+# Bureau of Indian Standards (BIS) AI Assistant — Docker Compose
 # ==============================================================================
 
 services:
   bis-rag-app:
     build:
-      context: ./bis_RAG_system
+      context: .
       dockerfile: Dockerfile
     image: bis-rag-assistant:latest
     container_name: bis_rag_assistant
@@ -15,13 +15,13 @@ services:
     ports:
       - "${PORT:-8000}:8000"
     env_file:
-      - ./bis_RAG_system/.env
+      - .env
     environment:
       - PORT=8000
       - HOST=0.0.0.0
       - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash-lite}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
       - QDRANT_URL=${QDRANT_URL}
